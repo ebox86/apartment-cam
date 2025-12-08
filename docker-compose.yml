@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  cam-proxy:
+    build: ./cam-proxy
+    container_name: apartment-cam-proxy
+    environment:
+      CAM_URL: "http://CAMUSER:CAMPASS@CAMERA_IP/axis-cgi/mjpg/video.cgi"
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
