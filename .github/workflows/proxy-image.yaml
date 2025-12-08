@@ -6,6 +6,7 @@ on:
     paths:
       - "cam-proxy/**"
       - ".github/workflows/proxy-image.yml"
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
