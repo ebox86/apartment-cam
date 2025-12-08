@@ -12,6 +12,11 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: apartment-cam-viewer
   IMAGE: ghcr.io/${{ github.repository_owner }}/apartment-cam-viewer
+  CLOUD_RUN_SERVICE: apartment-cam-viewer
+  CLOUD_RUN_REGION: us-east4
+  GCP_PROJECT_ID: portfolio-website-403402
+
+
 
 jobs:
   build-and-push:
@@ -53,38 +58,38 @@ jobs:
         id: image_ref
         run: echo "image=${{ env.IMAGE }}:latest" >> "$GITHUB_OUTPUT"
 
-  # deploy-cloud-run:
-  #   needs: build-and-push
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     id-token: write
+  deploy-cloud-run:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  #     - name: Set up gcloud auth (Workload Identity Federation)
-  #       uses: google-github-actions/auth@v2
-  #       with:
-  #         workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-  #         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+      - name: Set up gcloud auth (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
-  #     - name: Install gcloud SDK
-  #       uses: google-github-actions/setup-gcloud@v2
-  #       with:
-  #         project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Install gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-  #     - name: Deploy to Cloud Run
-  #       env:
-  #         SERVICE: ${{ secrets.CLOUD_RUN_SERVICE }}
-  #         REGION: ${{ secrets.CLOUD_RUN_REGION }}
-  #         CLOUD_RUN_IMAGE: ${{ secrets.CLOUD_RUN_IMAGE }}
-  #       run: |
-  #         IMAGE="${CLOUD_RUN_IMAGE:-${{ needs.build-and-push.outputs.image }}}"
-  #         gcloud run deploy "$SERVICE" \
-  #           --region "$REGION" \
-  #           --platform managed \
-  #           --image "$IMAGE" \
-  #           --allow-unauthenticated \
-  #           --env-vars-file cloudrun.env
+      - name: Deploy to Cloud Run
+        env:
+          SERVICE: ${{ env.CLOUD_RUN_SERVICE }}
+          REGION: ${{ env.CLOUD_RUN_REGION }}
+          CLOUD_RUN_IMAGE: ${{ secrets.CLOUD_RUN_IMAGE }}
+        run: |
+          IMAGE="${CLOUD_RUN_IMAGE:-${{ needs.build-and-push.outputs.image }}}"
+          gcloud run deploy "$SERVICE" \
+            --region "$REGION" \
+            --platform managed \
+            --image "$IMAGE" \
+            --allow-unauthenticated \
+            --env-vars-file cloudrun.env
