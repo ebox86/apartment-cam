@@ -14,20 +14,33 @@ app.get("/stream", async (_req, res) => {
     return;
   }
 
-  const camRes = await fetch(CAM_URL);
+  try {
+    console.log("Requesting camera stream from:", CAM_URL);
+    const camRes = await fetch(CAM_URL);
 
-  if (!camRes.ok || !camRes.body) {
-    res.status(502).send("Failed to fetch camera stream");
-    return;
+    console.log("Camera response status:", camRes.status, camRes.statusText);
+
+    if (!camRes.ok || !camRes.body) {
+      res
+        .status(502)
+        .send(`Failed to fetch camera stream (status ${camRes.status})`);
+      return;
+    }
+
+    // camRes.body is already a Node.js readable (PassThrough), so just pipe it
+    res.setHeader(
+      "Content-Type",
+      camRes.headers.get("content-type") || "multipart/x-mixed-replace"
+    );
+    res.setHeader("Cache-Control", "no-store");
+
+    camRes.body.pipe(res);
+  } catch (err) {
+    console.error("Error proxying stream:", err);
+    if (!res.headersSent) {
+      res.status(500).send("Error proxying stream");
+    }
   }
-
-  res.setHeader(
-    "Content-Type",
-    camRes.headers.get("content-type") || "multipart/x-mixed-replace"
-  );
-  res.setHeader("Cache-Control", "no-store");
-
-  camRes.body.pipe(res);
 });
 
 const port = process.env.PORT || 3000;
