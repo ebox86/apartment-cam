@@ -1,0 +1,659 @@
+:root {
+    --bg: #050608;
+    --panel: #101318;
+    --panel-soft: #181c24;
+    --accent: #42f5b0;
+    --accent-soft: rgba(66, 245, 176, 0.12);
+    --border: rgba(255, 255, 255, 0.12);
+    --text: #f4f7fb;
+    --text-muted: #7f8a9e;
+    --danger: #ff4d6a;
+  }
+  
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  
+  body {
+    background: radial-gradient(circle at top, #151922 0%, #050608 55%);
+    color: var(--text);
+    font-family: Consolas, "SF Mono", Menlo, Monaco, "Ubuntu Mono", "Roboto Mono",
+      monospace;
+  }
+  
+  #__next {
+    height: 100%;
+  }
+  
+  .app-root {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center; /* horizontal only */
+    padding: 16px;
+  }
+  
+  /* Simple layout */
+  .cam-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(280px, 1.4fr);
+    gap: 16px;
+    width: 100%;
+    max-width: 1200px;
+  }
+  
+  @media (max-width: 900px) {
+    .cam-shell {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  
+  .card {
+    background: linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.75);
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .card-title {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  
+  .card-pill {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid rgba(66, 245, 176, 0.4);
+  }
+  
+  .card-body {
+    padding: 10px;
+  }
+  
+  /* Cam container */
+  .cam-frame {
+    position: relative;
+    background: radial-gradient(circle at top, #202636 0%, #050608 60%);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
+  .cam-frame-inner {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 */
+    overflow: hidden;
+  }
+  
+  .cam-frame-inner img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  /* HUD overlay */
+  .cam-hud {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  
+  .cam-hud-top,
+  .cam-hud-bottom {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  
+  .cam-hud-top {
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.6),
+      transparent
+    );
+  }
+  
+  .cam-hud-bottom {
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.65),
+      transparent
+    );
+  }
+  
+  .cam-hud span {
+    color: rgba(255, 255, 255, 0.85);
+  }
+  
+  .cam-hud .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #2cf598;
+    box-shadow: 0 0 12px rgba(44, 245, 152, 0.9);
+    margin-right: 6px;
+  }
+  
+  /* Controls */
+  .cam-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+    gap: 8px;
+  }
+  
+  .btn {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: radial-gradient(circle at top, #252b37 0%, #11141d 60%);
+    color: var(--text);
+    font-size: 11px;
+    padding: 6px 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  
+  .btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(66, 245, 176, 0.3);
+  }
+  
+  /* Meta panel */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    font-size: 12px;
+  }
+  
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  
+  .meta-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10px;
+  }
+  
+  .meta-value {
+    color: var(--text);
+    font-size: 12px;
+  }
+  
+  .meta-mono {
+    font-family: Consolas, "SF Mono", Menlo, Monaco, "Ubuntu Mono",
+      "Roboto Mono", monospace;
+  }
+  
+  .meta-section {
+    padding-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    margin-bottom: 6px;
+  }
+  
+  .badge-elev {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(80, 130, 255, 0.12);
+    border: 1px solid rgba(80, 130, 255, 0.5);
+    font-size: 11px;
+  }
+  
+  .badge-elev-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #5082ff;
+  }
+  
+  /* Top header */
+  .app-header {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto 10px auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  
+  .app-title {
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  
+  .app-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  
+  
+  /* Main console layout */
+  .cam-layout {
+    width: 100%;
+    max-width: 1200px;
+    margin-top: 20px; /* give breathing room */
+  }
+  
+  
+  .cam-console {
+    background: linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.75);
+    padding: 14px 16px;
+  }
+  
+  .cam-console-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  
+  .cam-console-body {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(260px, 1.5fr);
+    gap: 16px;
+    align-items: stretch;
+  }
+  
+  @media (max-width: 900px) {
+    .cam-console-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  
+  /* Stream side */
+  .cam-console-main {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Existing cam-frame / cam-hud styles still apply.
+     Just add a simple offline state: */
+  .cam-offline {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at top, #252b37 0%, #050608 60%);
+    color: var(--danger);
+    font-size: 13px;
+    text-transform: uppercase;
+  }
+  
+  /* Telemetry side */
+  .cam-console-meta {
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* vertical centering */
+    gap: 10px;
+    padding: 6px 0;
+  }
+  
+  .meta-block {
+    padding-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+  }
+  
+  .meta-block:last-child {
+    border-bottom: none;
+  }
+  
+  .meta-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+  
+  .meta-value {
+    color: var(--text);
+    font-size: 12px;
+  }
+  
+  :root {
+    --bg: #050608;
+    --panel: #101318;
+    --panel-soft: #181c24;
+    --accent: #42f5b0;
+    --accent-soft: rgba(66, 245, 176, 0.12);
+    --border: rgba(255, 255, 255, 0.16);
+    --text: #f4f7fb;
+    --text-muted: #7f8a9e;
+    --danger: #ff4d6a;
+  }
+  
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  
+  body {
+    background: radial-gradient(circle at top, #151922 0%, #050608 55%);
+    color: var(--text);
+    font-family: Consolas, "SF Mono", Menlo, Monaco, "Ubuntu Mono",
+      "Roboto Mono", monospace;
+  }
+  
+  #__next {
+    height: 100%;
+  }
+  
+  .app-root {
+    min-height: 100vh;
+    position: relative;
+  }
+  
+  /* fixed top bar */
+  .top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 68px; /* a bit taller to fit logo */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    background: #0a0c10;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    z-index: 10;
+  }
+  
+  .top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .top-bar-logo img {
+    display: block;
+    width: 70px;
+    height: 70px;
+    object-fit: contain;
+  }
+  
+  .top-bar-text {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .top-bar-title {
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  
+  .top-bar-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  
+  
+  .center-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px 16px; /* minimal padding to tuck under header */
+  }
+  
+  .cam-panel {
+    width: 100%;
+    max-width: 1400px; /* bigger */
+    background: linear-gradient(135deg, var(--panel) 0%, var(--panel-soft) 100%);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+    padding: 16px 18px 14px;
+  }
+  
+  /* camera frame */
+  .cam-frame {
+    position: relative;
+    background: radial-gradient(circle at top, #202636 0%, #050608 60%);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
+  .cam-frame-inner {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 */
+    overflow: hidden;
+  }
+  
+  .cam-frame-inner img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  /* HUD overlay */
+  .cam-hud {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  
+  .cam-hud-top,
+  .cam-hud-bottom {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  
+  .cam-hud-top {
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.7),
+      transparent
+    );
+  }
+  
+  .cam-hud-bottom {
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.7),
+      transparent
+    );
+  }
+  
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #2cf598;
+    box-shadow: 0 0 12px rgba(44, 245, 152, 0.9);
+    margin-right: 5px;
+  }
+  
+  .live-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 77, 106, 0.6);
+    background: rgba(255, 77, 106, 0.16);
+    color: var(--danger);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  
+  /* offline state */
+  .cam-offline {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at top, #252b37 0%, #050608 60%);
+    color: var(--danger);
+    font-size: 13px;
+    text-transform: uppercase;
+  }
+  
+  /* footer under cam (telemetry + fullscreen) */
+  .cam-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    gap: 12px;
+    font-size: 11px;
+  }
+  
+  .cam-footer-left {
+    color: var(--text-muted);
+  }
+  
+  .cam-footer-right {
+    display: flex;
+    justify-content: flex-end;
+  }
+  
+  /* common bits reused */
+  .meta-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10px;
+  }
+  
+  .meta-value {
+    color: var(--text);
+    font-size: 11px;
+  }
+  
+  .meta-mono {
+    font-family: Consolas, "SF Mono", Menlo, Monaco, "Ubuntu Mono",
+      "Roboto Mono", monospace;
+  }
+  
+  /* button */
+  .btn {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: radial-gradient(circle at top, #252b37 0%, #11141d 60%);
+    color: var(--text);
+    font-size: 11px;
+    padding: 6px 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .btn:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(66, 245, 176, 0.3);
+  }
+  
+  .stats-panel {
+    margin-top: 14px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+    padding-top: 10px;
+  }
+  
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+  
+  @media (max-width: 900px) {
+    .stats-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  
+  .stats-item {
+    font-size: 11px;
+  }
+  
+  .stats-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+  
+  .stats-value {
+    color: var(--text);
+    font-size: 12px;
+  }
+  

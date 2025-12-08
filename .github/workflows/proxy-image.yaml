@@ -1,8 +1,11 @@
-name: Build and push apartment-cam image
+name: Build and push proxy image
 
 on:
   push:
     branches: [ main ]
+    paths:
+      - "cam-proxy/**"
+      - ".github/workflows/proxy-image.yml"
 
 env:
   REGISTRY: ghcr.io
@@ -30,7 +33,7 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Build and push proxy
         uses: docker/build-push-action@v6
         with:
           context: ./cam-proxy
