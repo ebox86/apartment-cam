@@ -91,5 +91,4 @@ jobs:
             --region "$REGION" \
             --platform managed \
             --image "$IMAGE" \
-            --allow-unauthenticated \
-            --env-vars-file cloudrun.env
+            --allow-unauthenticated
