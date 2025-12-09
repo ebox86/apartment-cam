@@ -1,6 +1,7 @@
 import express from "express";
 import fetch from "node-fetch";
 import DigestFetch from "digest-fetch";
+import http from "http";
 import https from "https";
 import { Readable } from "stream";
 
@@ -39,7 +40,10 @@ const digestClient =
 
 const PTZ_MIN_ZOOM_DEFAULT = 1;
 const PTZ_MAX_ZOOM_DEFAULT = 9999;
-const insecureAgent = new https.Agent({ rejectUnauthorized: false });
+const STATUS_CACHE_MS = Number(process.env.STATUS_CACHE_MS || 7000);
+const CAPS_CACHE_MS = Number(process.env.CAPS_CACHE_MS || 60000);
+const httpAgent = new http.Agent({ keepAlive: true });
+const insecureAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
 function authHeaders() {
   if (!CAMERA_USERNAME || !CAMERA_PASSWORD) return {};
@@ -63,9 +67,8 @@ async function fetchWithTimeout(path, init = {}) {
   const timeoutMs = CAMERA_TIMEOUT_MS > 0 ? CAMERA_TIMEOUT_MS : 5000;
   const headers = { ...(init.headers || {}) };
   const agent =
-    url.startsWith("https://") && init.agent === undefined
-      ? insecureAgent
-      : init.agent;
+    init.agent ??
+    (url.startsWith("https://") ? insecureAgent : httpAgent);
 
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
@@ -625,26 +628,87 @@ app.get("/stream", async (_req, res) => {
   }
 });
 
-app.get("/api/status", async (_req, res) => {
-  const [optics, geolocation, streams, time, device, temperature] =
-    await Promise.all([
-      getPtzStatus(),
-      getGeolocation(),
-      getStreams(),
-      getTime(),
-      getDeviceInfo(),
-      getTemperatureAndIr(),
-    ]);
+const statusCache = {
+  data: null,
+  expiresAt: 0,
+  promise: null,
+};
 
-  res.json({
+const capsCache = {
+  data: null,
+  expiresAt: 0,
+  promise: null,
+};
+
+async function buildStatusPayload() {
+  const [optics, geolocation, time, device, temperature] = await Promise.all([
+    getPtzStatus(),
+    getGeolocation(),
+    getTime(),
+    getDeviceInfo(),
+    getTemperatureAndIr(),
+  ]);
+
+  return {
     optics,
     geolocation,
-    streams,
     time,
     device,
     temperature,
     fetchedAt: new Date().toISOString(),
-  });
+  };
+}
+
+async function getCachedStatusPayload() {
+  const now = Date.now();
+  if (statusCache.data && now < statusCache.expiresAt) {
+    return statusCache.data;
+  }
+  if (!statusCache.promise) {
+    statusCache.promise = (async () => {
+      try {
+        const payload = await buildStatusPayload();
+        statusCache.data = payload;
+        statusCache.expiresAt = Date.now() + STATUS_CACHE_MS;
+        return payload;
+      } finally {
+        statusCache.promise = null;
+      }
+    })();
+  }
+  return statusCache.promise;
+}
+
+async function getCachedCapabilities() {
+  const now = Date.now();
+  if (capsCache.data && now < capsCache.expiresAt) {
+    return capsCache.data;
+  }
+  if (!capsCache.promise) {
+    capsCache.promise = (async () => {
+      try {
+        const caps = await getPtzLimits();
+        capsCache.data = caps;
+        capsCache.expiresAt = Date.now() + CAPS_CACHE_MS;
+        return caps;
+      } finally {
+        capsCache.promise = null;
+      }
+    })();
+  }
+  return capsCache.promise;
+}
+
+app.get("/api/status", async (_req, res) => {
+  try {
+    const payload = await getCachedStatusPayload();
+    res.json(payload);
+  } catch (err) {
+    console.error("Status cache error", err);
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to fetch status",
+    });
+  }
 });
 
 app.get("/api/ptz/status", async (_req, res) => {
@@ -654,8 +718,15 @@ app.get("/api/ptz/status", async (_req, res) => {
 });
 
 app.get("/api/ptz/capabilities", async (_req, res) => {
-  const caps = await getPtzLimits();
-  res.json(caps);
+  try {
+    const caps = await getCachedCapabilities();
+    res.json(caps);
+  } catch (err) {
+    console.error("Caps cache error", err);
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to fetch capabilities",
+    });
+  }
 });
 
 app.post("/api/ptz", async (req, res) => {
