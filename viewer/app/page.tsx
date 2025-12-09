@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 
 const LOCALHOST = false;
-const STREAM_URL = LOCALHOST ? "http://localhost:3001/stream" : "https://cam.ebox86.com/stream";
-const API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
-const CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
-const ENV_API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
-const ENV_STREAM_URL = process.env.NEXT_PUBLIC_STREAM_URL || "";
-const ENV_CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
+const DEFAULT_API_BASE = LOCALHOST
+  ? "http://localhost:3001"
+  : "https://cam.ebox86.com";
+const DEFAULT_STREAM_URL = LOCALHOST
+  ? "http://localhost:3001/stream"
+  : "https://cam.ebox86.com/stream";
+const DEFAULT_CAMERA_ID = 1;
+
+function parseCameraId(value?: string | number | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_CAMERA_ID;
+}
 
 type StatusResponse = {
   optics: {
@@ -95,10 +101,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function apiUrl(path: string) {
-  return `${API_BASE}${path}`;
-}
-
 function normalizeHeading(h: number) {
   const v = h % 360;
   return v < 0 ? v + 360 : v;
@@ -123,13 +125,25 @@ export default function ApartmentCamPage() {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const dragMoved = useRef(false);
   const [aimBox, setAimBox] = useState<{ x: number; y: number } | null>(null);
+  const initialApiBase =
+    process.env.NEXT_PUBLIC_PROXY_BASE ||
+    process.env.PROXY_BASE ||
+    DEFAULT_API_BASE;
+  const initialCameraId = parseCameraId(
+    process.env.NEXT_PUBLIC_CAMERA_ID || process.env.CAMERA_ID
+  );
+  const initialStreamUrl =
+    process.env.NEXT_PUBLIC_STREAM_URL ||
+    process.env.STREAM_URL ||
+    DEFAULT_STREAM_URL;
   const [config, setConfig] = useState<AppConfig>({
-    apiBase: ENV_API_BASE,
-    cameraId: ENV_CAMERA_ID,
-    streamUrl:
-      ENV_STREAM_URL ||
-      (ENV_API_BASE ? `${ENV_API_BASE}/stream` : "http://localhost:3001/stream"),
+    apiBase: initialApiBase,
+    cameraId: initialCameraId,
+    streamUrl: initialStreamUrl,
   });
+  const cameraId = config.cameraId;
+  const apiUrl = (path: string) => `${config.apiBase}${path}`;
+  const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -149,6 +163,35 @@ export default function ApartmentCamPage() {
   const [showWeatherOverlay, setShowWeatherOverlay] = useState(true);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadConfig = async () => {
+      try {
+        const res = await fetch("/api/config");
+        if (!res.ok) throw new Error(`Config HTTP ${res.status}`);
+        const payload = (await res.json()) as Partial<AppConfig>;
+        if (!active) return;
+        setConfig((prev) => {
+          const nextCameraId =
+            payload.cameraId != null ? parseCameraId(payload.cameraId) : prev.cameraId;
+          return {
+            apiBase: payload.apiBase || prev.apiBase,
+            cameraId: nextCameraId,
+            streamUrl: payload.streamUrl || prev.streamUrl,
+          };
+        });
+      } catch (err) {
+        console.error("Failed to load runtime config", err);
+      }
+    };
+
+    loadConfig();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // live clock with seconds
   useEffect(() => {
@@ -226,7 +269,7 @@ export default function ApartmentCamPage() {
       mounted = false;
       clearInterval(statusId);
     };
-  }, []);
+  }, [config.apiBase]);
 
   // weather fetch (OpenWeather)
   useEffect(() => {
@@ -318,7 +361,7 @@ export default function ApartmentCamPage() {
       await fetch(apiUrl("/api/ptz"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zoom: z, camera: CAMERA_ID }),
+        body: JSON.stringify({ zoom: z, camera: cameraId }),
       });
       setStatus((prev) =>
         prev
@@ -335,7 +378,7 @@ export default function ApartmentCamPage() {
       await fetch(apiUrl("/api/ptz/relative"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zoom: delta, camera: CAMERA_ID }),
+        body: JSON.stringify({ zoom: delta, camera: cameraId }),
       });
     } catch (err) {
       console.error("Relative zoom error", err);
@@ -343,7 +386,7 @@ export default function ApartmentCamPage() {
   };
 
   const applyRelativePanTilt = async (panDelta: number, tiltDelta: number) => {
-    const payload: Record<string, number | string> = { camera: CAMERA_ID };
+    const payload: Record<string, number | string> = { camera: cameraId };
     if (panDelta) payload.pan = Math.round(panDelta);
     if (tiltDelta) payload.tilt = Math.round(tiltDelta);
     if (!payload.pan && !payload.tilt) return;
@@ -363,7 +406,7 @@ export default function ApartmentCamPage() {
       await fetch(apiUrl("/api/ptz/home"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ camera: CAMERA_ID }),
+        body: JSON.stringify({ camera: cameraId }),
       });
     } catch (err) {
       console.error("Home error", err);
@@ -498,12 +541,12 @@ export default function ApartmentCamPage() {
             <div className="cam-frame-inner">
               {!hasError ? (
                 <img
-                  src={STREAM_URL}
-                alt="Pittsburgh skyline live camera"
-                onError={() => setHasError(true)}
-              />
-            ) : (
-              <div className="cam-offline">
+                  src={streamUrl}
+                  alt="Pittsburgh skyline live camera"
+                  onError={() => setHasError(true)}
+                />
+              ) : (
+                <div className="cam-offline">
                   <span>STREAM OFFLINE / UNREACHABLE</span>
                 </div>
               )}
@@ -742,7 +785,7 @@ export default function ApartmentCamPage() {
               <div className="ptz-header">
                 <div className="stats-label">ZOOM CONTROL</div>
                 <div className="app-subtitle">
-                  Camera {CAMERA_ID} ({zoomMin}–{zoomMax})
+                  Camera {cameraId} ({zoomMin}–{zoomMax})
                 </div>
               </div>
               <div className="ptz-body">
