@@ -1,8 +1,9 @@
 import "./../styles/globals.css";
+import { siteConfig } from "../config/site-config";
 
 export const metadata = {
-  title: "Apartment Cam – Pittsburgh Skyline",
-  description: "Live MJPEG feed from my apartment cam overlooking Pittsburgh.",
+  title: siteConfig.siteTitle,
+  description: siteConfig.siteSubtitle,
 };
 
 export default function RootLayout({
