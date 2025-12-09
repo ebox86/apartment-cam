@@ -94,6 +94,7 @@ jobs:
           fi
           ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_PROXY_BASE=https://cam.ebox86.com"
           ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_CAMERA_ID=1"
+          ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_STREAM_URL=https://cam.ebox86.com/stream"
           gcloud run deploy "$SERVICE" \
             --region "$REGION" \
             --platform managed \
