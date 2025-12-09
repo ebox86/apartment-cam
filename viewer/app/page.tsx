@@ -6,8 +6,6 @@ const LOCALHOST = false;
 const STREAM_URL = LOCALHOST ? "http://localhost:3001/stream" : "https://cam.ebox86.com/stream";
 const API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
 const CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
-const DEFAULT_COORDS = { lat: 40.4406, lng: -79.9959 };
-const DEFAULT_HEADING = 167;
 const ENV_API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
 const ENV_STREAM_URL = process.env.NEXT_PUBLIC_STREAM_URL || "";
 const ENV_CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
@@ -232,8 +230,8 @@ export default function ApartmentCamPage() {
 
   // weather fetch (OpenWeather)
   useEffect(() => {
-    const lat = status?.geolocation.lat ?? DEFAULT_COORDS.lat;
-    const lng = status?.geolocation.lng ?? DEFAULT_COORDS.lng;
+    const lat = status?.geolocation.lat;
+    const lng = status?.geolocation.lng;
     if (lat == null || lng == null) return;
 
     const controller = new AbortController();
@@ -283,10 +281,9 @@ export default function ApartmentCamPage() {
 
   const handleExpand = () => setIsExpanded((prev) => !prev);
 
-  const currentLat = status?.geolocation.lat ?? DEFAULT_COORDS.lat;
-  const currentLng = status?.geolocation.lng ?? DEFAULT_COORDS.lng;
-  const currentHeadingRaw =
-    status?.geolocation.heading ?? (status ? null : DEFAULT_HEADING);
+  const currentLat = status?.geolocation.lat ?? null;
+  const currentLng = status?.geolocation.lng ?? null;
+  const currentHeadingRaw = status?.geolocation.heading ?? null;
   const currentHeading =
     currentHeadingRaw != null ? normalizeHeading(currentHeadingRaw) : null;
   const zoomMin = caps?.minZoom ?? 1;
