@@ -169,9 +169,9 @@ function countryCodeToFlag(code?: string | null) {
 export default function ApartmentCamPage() {
   const camContainerRef = useRef<HTMLDivElement | null>(null);
   const camInnerRef = useRef<HTMLDivElement | null>(null);
-  const hideHudTimer = useRef<NodeJS.Timeout | null>(null);
+  const hideHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
-  const zoomHoldRef = useRef<number | null>(null);
+  const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [aimBox, setAimBox] = useState<{ x: number; y: number } | null>(null);
   const [dragMoved, setDragMoved] = useState(false);
   const [panLine, setPanLine] = useState<{
@@ -180,7 +180,7 @@ export default function ApartmentCamPage() {
     endX: number;
     endY: number;
   } | null>(null);
-  const wheelIndicatorTimer = useRef<number | null>(null);
+  const wheelIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [wheelZoomIndicator, setWheelZoomIndicator] = useState<number | null>(
     null
   );
