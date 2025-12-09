@@ -8,6 +8,9 @@ const API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
 const CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
 const DEFAULT_COORDS = { lat: 40.4406, lng: -79.9959 };
 const DEFAULT_HEADING = 167;
+const ENV_API_BASE = process.env.NEXT_PUBLIC_PROXY_BASE || "";
+const ENV_STREAM_URL = process.env.NEXT_PUBLIC_STREAM_URL || "";
+const ENV_CAMERA_ID = Number(process.env.NEXT_PUBLIC_CAMERA_ID || 1);
 
 type StatusResponse = {
   optics: {
@@ -60,6 +63,12 @@ type WeatherData = {
   humidity: number | null;
   windKph: number | null;
   icon: string | null;
+};
+
+type AppConfig = {
+  apiBase: string;
+  cameraId: number;
+  streamUrl: string;
 };
 
 function formatLat(lat: number | null | undefined) {
@@ -116,6 +125,13 @@ export default function ApartmentCamPage() {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const dragMoved = useRef(false);
   const [aimBox, setAimBox] = useState<{ x: number; y: number } | null>(null);
+  const [config, setConfig] = useState<AppConfig>({
+    apiBase: ENV_API_BASE,
+    cameraId: ENV_CAMERA_ID,
+    streamUrl:
+      ENV_STREAM_URL ||
+      (ENV_API_BASE ? `${ENV_API_BASE}/stream` : "http://localhost:3001/stream"),
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
