@@ -92,6 +92,8 @@ jobs:
           if [ -n "$OPENWEATHER_KEY" ]; then
             ENV_FLAGS+=" --set-env-vars OPENWEATHER_KEY=$OPENWEATHER_KEY"
           fi
+          ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_PROXY_BASE=https://cam.ebox86.com"
+          ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_CAMERA_ID=1"
           gcloud run deploy "$SERVICE" \
             --region "$REGION" \
             --platform managed \
