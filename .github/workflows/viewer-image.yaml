@@ -85,10 +85,16 @@ jobs:
           SERVICE: ${{ env.CLOUD_RUN_SERVICE }}
           REGION: ${{ env.CLOUD_RUN_REGION }}
           CLOUD_RUN_IMAGE: ${{ secrets.CLOUD_RUN_IMAGE }}
+          OPENWEATHER_KEY: ${{ secrets.OPENWEATHER_KEY }}
         run: |
           IMAGE="${CLOUD_RUN_IMAGE:-${{ needs.build-and-push.outputs.image }}}"
+          ENV_FLAGS=""
+          if [ -n "$OPENWEATHER_KEY" ]; then
+            ENV_FLAGS+=" --set-env-vars OPENWEATHER_KEY=$OPENWEATHER_KEY"
+          fi
           gcloud run deploy "$SERVICE" \
             --region "$REGION" \
             --platform managed \
             --image "$IMAGE" \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            $ENV_FLAGS
