@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
 import { siteConfig } from "../config/site-config";
 
 const LOCALHOST = process.env.NODE_ENV === "development";
@@ -8,8 +9,8 @@ const DEFAULT_API_BASE = LOCALHOST
   ? "http://localhost:3001"
   : "https://cam.ebox86.com";
 const DEFAULT_STREAM_URL = LOCALHOST
-  ? "http://localhost:3001/stream"
-  : "https://cam.ebox86.com/stream";
+  ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
+  : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
 const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 
@@ -233,6 +234,8 @@ async function exitFullscreen() {
 export default function ApartmentCamPage() {
   const camContainerRef = useRef<HTMLDivElement | null>(null);
   const camInnerRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const hideHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -269,12 +272,7 @@ export default function ApartmentCamPage() {
   const cameraId = config.cameraId;
   const apiUrl = (path: string) => `${config.apiBase}${path}`;
   const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
-  const trimmedApiBase = config.apiBase
-    ? config.apiBase.replace(/\/$/, "")
-    : "";
-  const streamProbeTarget = trimmedApiBase
-    ? `${trimmedApiBase}/stream`
-    : streamUrl;
+  const streamProbeTarget = streamUrl;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -596,7 +594,6 @@ export default function ApartmentCamPage() {
   const countryName = formatCountryName(countryCode);
   const flagEmoji = countryCodeToFlag(countryCode);
   const offlineStatusLabel = STREAM_OFFLINE_LABEL;
-  const offlineDetailText = streamIssueDetail;
   const overlaysEnabled = !hasError && !isMobile;
   const ptzPanelClassName = `ptz-panel${controlsDisabled ? " ptz-panel--disabled" : ""}`;
   const sharePanelClassName = `share-panel${controlsDisabled ? " share-panel--disabled" : ""}`;
@@ -876,12 +873,7 @@ export default function ApartmentCamPage() {
       streamProbeController.current = null;
     }
   };
-
-  const handleStreamError = () => {
-    setHasError(true);
-    void probeStreamEndpoint();
-  };
-
+  
   const probeStreamEndpoint = useCallback(async () => {
     if (!streamProbeTarget) return true;
     streamProbeController.current?.abort();
@@ -938,6 +930,70 @@ export default function ApartmentCamPage() {
       }
     }
   }, [streamProbeTarget]);
+  
+  const handleStreamError = useCallback(() => {
+    setHasError(true);
+    void probeStreamEndpoint();
+  }, [probeStreamEndpoint]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !streamUrl) {
+      return undefined;
+    }
+
+    const cleanupHls = () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+
+    const resetVideoSource = () => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    const attachNative = () => {
+      resetVideoSource();
+      video.src = streamUrl;
+      video.load();
+      void video.play().catch(() => {});
+    };
+
+    const attachHls = () => {
+      const hls = new Hls({ startFragPrefetch: true });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          cleanupHls();
+          handleStreamError();
+        }
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        void video.play().catch(() => {});
+      });
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+    };
+
+    const usesNative =
+      video.canPlayType("application/vnd.apple.mpegurl") !== "";
+
+    if (Hls.isSupported() && !usesNative) {
+      cleanupHls();
+      attachHls();
+    } else {
+      cleanupHls();
+      attachNative();
+    }
+
+    return () => {
+      cleanupHls();
+      resetVideoSource();
+    };
+  }, [streamUrl, handleStreamError]);
 
   useEffect(() => {
     if (!streamProbeTarget) return undefined;
@@ -1244,12 +1300,18 @@ export default function ApartmentCamPage() {
               >
                       <div className="cam-frame-inner" ref={camInnerRef}>
                         {!hasError ? (
-                          <img
-                            src={streamUrl}
-                            alt={siteConfig.streamAltText}
+                          <video
+                            ref={videoRef}
+                            className="cam-video"
+                            aria-label={siteConfig.streamAltText}
                             draggable={false}
-                            onDragStart={(event) => event.preventDefault()}
-                            onLoad={handleStreamLoad}
+                            muted
+                            autoPlay
+                            playsInline
+                            preload="metadata"
+                            controls={false}
+                            disablePictureInPicture
+                            onCanPlay={handleStreamLoad}
                             onError={handleStreamError}
                           />
                         ) : (
@@ -1262,11 +1324,6 @@ export default function ApartmentCamPage() {
                               <span className="cam-offline-pill">
                                 {offlineStatusLabel}
                               </span>
-                              {offlineDetailText && (
-                                <span className="cam-offline-detail">
-                                  {offlineDetailText}
-                                </span>
-                              )}
                             </div>
                           </div>
                         )}
