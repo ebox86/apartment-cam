@@ -11,7 +11,7 @@ export type SiteConfig = {
 
 export const siteConfig: SiteConfig = {
   siteTitle: "APARTMENT-CAM",
-  siteSubtitle: "Real-time MJPEG viewer · PTZ, telemetry & weather",
+  siteSubtitle: "Real-time cam viewer · PTZ, telemetry & weather",
   siteTitlePrefix: "APARTMENT-CAM // ",
   siteTitleLocationFallback: "Pittsburgh, PA",
   locationLabel: "Pittsburgh, Pennsylvania, USA",
