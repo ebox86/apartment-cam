@@ -20,7 +20,7 @@
 - **.github/workflows/** – GHCR build + Cloud Run deploy (Workload Identity Federation).
 
 ## Architecture
-- `go2rtc` ingests the Axis RTSP stream (configured via `go2rtc/go2rtc.yaml`) and exposes HLS + a minimal HTTP API on port `1984` with `allow_paths` restricted to `/api`, `/api/streams`, and `/api/stream.m3u8`.
+- `go2rtc` ingests the Axis RTSP stream (configured via `go2rtc/go2rtc.yaml`) and exposes HLS + a minimal HTTP API on port `1984` with `allow_paths` restricted to `/api`, `/api/streams`, and `/api/stream.m3u8`. That port only exists on the Compose network; `cloudflared` is the public ingress for `cam.YOUR_DOMAIN`.
 - `cloudflared` tunnels `cam.YOUR_DOMAIN` to `http://go2rtc:1984`, so the camera stream is never exposed directly to the public internet.
 - `cam-proxy` remains responsible for camera telemetry, PTZ/zoom controls, and the status endpoints the viewer consumes.
 - The Next.js viewer pulls telemetry from `cam-proxy` and plays the go2rtc HLS endpoint (`/api/stream.m3u8?src=axis&mp4`); Chrome/Firefox use `hls.js`, Safari uses native HLS, and WebRTC works only on the LAN because UDP streams do not flow through the tunnel.
@@ -28,10 +28,10 @@
 ## Environment & configuration
 - Copy `.env.example` to `.env` and fill in your camera + tunnel credentials.
   - `CAMERA_HOST`, `CAMERA_USERNAME`, `CAMERA_PASSWORD`, and `CAMERA_TIMEOUT_MS` drive the telemetry/proxy endpoints.
-  - `AXIS_HOST`, `AXIS_USER`, `AXIS_PASS`, and `AXIS_CAMERA` let go2rtc build the RTSP source that becomes the `axis` stream in `go2rtc/go2rtc.yaml`.
+- The Compose command automatically sanitizes `CAMERA_HOST` into `AXIS_HOST` and reuses `CAMERA_USERNAME`, `CAMERA_PASSWORD`, and `CAMERA_STREAM_ID` (defaults to 1) so you do not need to duplicate the `AXIS_*` settings.
   - `TUNNEL_CREDENTIALS_FILE` should point at the named-tunnel JSON (e.g., `cloudflared/tunnel.json`); keep that file outside of git.
   - `TUNNEL_NAME` is the named tunnel’s ID or user-friendly name; it is passed directly to `cloudflared tunnel run`.
-  - go2rtc reuses the same `CAMERA_HOST`, `CAMERA_USERNAME`, and `CAMERA_PASSWORD`; the Compose command strips `http[s]://` from `CAMERA_HOST` before starting go2rtc, so you don’t need to maintain a separate set of Axis env vars.
+  - `TUNNEL_ORIGIN_CERT` lets `cloudflared` prove ownership of the origin; mount it at `cloudflared/cert.pem` so the container can read `/etc/cloudflared/cert.pem`.
 - Update `cloudflared/config.yml` to point `hostname` at your public domain (e.g., `cam.example.com`). The existing ingress already forwards `/` to `http://go2rtc:1984` and returns `http_status:404` for everything else.
 - Keep private credentials out of git; `.env.example` is safe to track, but `.env` should stay local.
 

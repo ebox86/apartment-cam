@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   cam-proxy:
     build: ./cam-proxy
@@ -31,7 +29,7 @@ services:
       - /bin/sh
       - -c
       - >
-        AXIS_HOST=$(echo "${CAMERA_HOST}" | sed -E 's~https?://~~' | sed -E 's~/$~~');
+        export AXIS_HOST=$(echo "${CAMERA_HOST}" | sed -E 's~https?://~~' | sed -E 's~/$~~');
         exec go2rtc -config /config/go2rtc.yaml
 
   cloudflared:
