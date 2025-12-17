@@ -1,4 +1,6 @@
 ingress:
+  - hostname: cam-api.ebox86.com
+    service: http://cam-proxy:3000
   - hostname: cam.ebox86.com
     service: http://go2rtc:1984
   - service: http_status:404

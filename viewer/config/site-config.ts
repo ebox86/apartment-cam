@@ -15,7 +15,7 @@ export const siteConfig: SiteConfig = {
   siteTitlePrefix: "APARTMENT-CAM // ",
   siteTitleLocationFallback: "Pittsburgh, PA",
   locationLabel: "Pittsburgh, Pennsylvania, USA",
-  headerText: "AXIS P3227-LVE Network Camera",
+  headerText: "Alcoa bldg 30th floor",
   streamAltText: "Pittsburgh skyline live camera",
   defaultCountryCode: "US",
 };

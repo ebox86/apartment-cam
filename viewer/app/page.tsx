@@ -15,6 +15,7 @@ const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 const ZOOM_HOLD_STEP = 24;
 const ZOOM_HOLD_INTERVAL = 90;
+const STREAM_STORAGE_KEY = "apartment-cam-stream-url";
 
 function parseCameraId(value?: string | number | null) {
   const parsed = Number(value);
@@ -361,6 +362,21 @@ export default function ApartmentCamPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(STREAM_STORAGE_KEY);
+    if (stored) {
+      setConfig((prev) => ({ ...prev, streamUrl: stored }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (config.streamUrl) {
+      window.localStorage.setItem(STREAM_STORAGE_KEY, config.streamUrl);
+    }
+  }, [config.streamUrl]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -896,8 +912,8 @@ export default function ApartmentCamPage() {
     };
 
     try {
-      let res = await fetch(streamProbeTarget, {
-        method: "HEAD",
+      const res = await fetch(streamProbeTarget, {
+        method: "GET",
         cache: "no-store",
         signal: controller.signal,
       });
@@ -905,27 +921,12 @@ export default function ApartmentCamPage() {
 
       if (res.status === 404) {
         res.body?.cancel?.();
-        return markOffline(
-          res.status === 404 ? "Stream not available" : undefined
-        );
+        return markOffline("Stream not available");
       }
 
       if (!res.ok) {
         res.body?.cancel?.();
-        res = await fetch(streamProbeTarget, {
-          method: "GET",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return true;
-        if (res.status === 404 || !res.ok) {
-          res.body?.cancel?.();
-          return markOffline(
-            res.status === 404 ? "Stream not available" : undefined
-          );
-        }
-        res.body?.cancel?.();
-        return true;
+        return markOffline();
       }
 
       res.body?.cancel?.();
