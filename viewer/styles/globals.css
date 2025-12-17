@@ -807,8 +807,7 @@ body {
 
   .layout-grid--expanded .ptz-buttons .btn,
   .layout-grid--expanded .ptz-arrows .btn,
-  .layout-grid--expanded .zoom-stack .btn,
-  .layout-grid--expanded .zoom-reset {
+  .layout-grid--expanded .zoom-stack .btn {
     font-size: 10px;
     padding: 4px 8px;
   }
@@ -1424,18 +1423,18 @@ body {
   text-align: center;
 }
 
+.zoom-control {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.zoom-control--active {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(115, 235, 255, 0.35);
+}
+
 .zoom-stack__primary .btn,
 .zoom-stack__bounds .btn {
   text-align: center;
-}
-
-.zoom-reset {
-  grid-column: 1 / -1;
-  width: 100%;
-  justify-self: stretch;
-  background: rgba(255, 77, 106, 0.08);
-  border-color: rgba(255, 77, 106, 0.5);
-  color: #fff;
 }
 
 .ptz-arrows {
