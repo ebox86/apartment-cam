@@ -23,6 +23,7 @@ jobs:
       contents: read
       packages: write
 
+    environment: prod
     outputs:
       image: ${{ steps.image_ref.outputs.image }}
 
@@ -62,6 +63,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment: prod
 
     steps:
       - name: Checkout code
