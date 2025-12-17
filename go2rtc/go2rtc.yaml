@@ -1,0 +1,16 @@
+streams:
+  axis: >-
+    rtsp://${AXIS_USER}:${AXIS_PASS}@${AXIS_HOST}/axis-media/media.amp?audiocodec=aac&audiosamplerate=16000&audiobitrate=32000&camera=${AXIS_CAMERA}&videoframeskipmode=empty&videozprofile=classic&resolution=1920x1080&fps=30&audiodeviceid=0&audioinputid=0&timestamp=0&videocodec=h264
+
+api:
+  allow_paths:
+    - /api
+    - /api/streams
+    - /api/stream.m3u8
+    - /api/hls
+    - /hls
+    - /hls/playlist.m3u8
+    - /hls/segment.ts
+    - /stream.m3u8
+    - /api/hls/playlist.m3u8
+    - /api/hls/segment.ts

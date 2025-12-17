@@ -3,7 +3,6 @@ import fetch from "node-fetch";
 import DigestFetch from "digest-fetch";
 import http from "http";
 import https from "https";
-import { Readable } from "stream";
 
 const app = express();
 app.use(express.json());
@@ -544,88 +543,6 @@ async function sendPtzCommand(params) {
 
 app.get("/", (_req, res) => {
   res.send("apartment-cam proxy is running");
-});
-
-app.get("/stream", async (_req, res) => {
-  if (!CAM_URL) {
-    res.status(500).send("CAM_URL not set");
-    return;
-  }
-
-  const candidateUrls = [];
-  candidateUrls.push(CAM_URL);
-
-  const baseHasQuery = CAM_URL.includes("?");
-  const withCamera =
-    CAMERA_STREAM_ID && !CAM_URL.includes("camera=")
-      ? `${CAM_URL}${baseHasQuery ? "&" : "?"}camera=${encodeURIComponent(
-          CAMERA_STREAM_ID
-        )}`
-      : null;
-  const withProfile =
-    CAMERA_STREAM_PROFILE && !CAM_URL.includes("streamprofile=")
-      ? `${CAM_URL}${baseHasQuery ? "&" : "?"}streamprofile=${encodeURIComponent(
-          CAMERA_STREAM_PROFILE
-        )}`
-      : null;
-
-  if (withCamera) candidateUrls.push(withCamera);
-  if (withProfile) candidateUrls.push(withProfile);
-  if (withCamera && withProfile) {
-    const sep = CAM_URL.includes("?") ? "&" : "?";
-    candidateUrls.push(
-      `${CAM_URL}${sep}camera=${encodeURIComponent(
-        CAMERA_STREAM_ID
-      )}&streamprofile=${encodeURIComponent(CAMERA_STREAM_PROFILE)}`
-    );
-  }
-
-  for (const url of candidateUrls) {
-    try {
-      console.log("Requesting camera stream from:", url);
-      const camRes = digestClient
-        ? await digestClient.fetch(url, {
-            headers: { Accept: "multipart/x-mixed-replace", ...authHeaders() },
-            agent: url.startsWith("https://") ? insecureAgent : undefined,
-          })
-        : await fetch(url, {
-            headers: { Accept: "multipart/x-mixed-replace", ...authHeaders() },
-            agent: url.startsWith("https://") ? insecureAgent : undefined,
-          });
-
-      console.log("Camera response status:", camRes.status, camRes.statusText);
-
-      if (!camRes.ok || !camRes.body) {
-        continue;
-      }
-
-      res.setHeader(
-        "Content-Type",
-        camRes.headers.get("content-type") || "multipart/x-mixed-replace"
-      );
-      res.setHeader("Cache-Control", "no-store");
-
-      const nodeStream =
-        typeof camRes.body.pipe === "function"
-          ? camRes.body
-          : camRes.body && Readable.fromWeb
-          ? Readable.fromWeb(camRes.body)
-          : null;
-      if (!nodeStream) {
-        continue;
-      }
-
-      nodeStream.pipe(res);
-      return;
-    } catch (err) {
-      console.error("Error proxying stream attempt:", err);
-      // try next candidate
-    }
-  }
-
-  if (!res.headersSent) {
-    res.status(502).send("Failed to fetch camera stream (all candidates)");
-  }
 });
 
 const statusCache = {

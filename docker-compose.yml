@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   cam-proxy:
     build: ./cam-proxy
@@ -9,3 +7,49 @@ services:
     ports:
       - "3001:3000"
     restart: unless-stopped
+
+  go2rtc:
+    image: alexxit/go2rtc:1.9.13
+    container_name: apartment-go2rtc
+    env_file:
+      - .env
+    environment:
+      AXIS_USER: ${CAMERA_USERNAME}
+      AXIS_PASS: ${CAMERA_PASSWORD}
+      AXIS_CAMERA: ${CAMERA_STREAM_ID:-1}
+    volumes:
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:1984/api/streams"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    command:
+      - /bin/sh
+      - -c
+      - >
+        export AXIS_HOST=$(echo "${CAMERA_HOST}" | sed -E 's~https?://~~' | sed -E 's~/$~~');
+        exec go2rtc -config /config/go2rtc.yaml
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: apartment-cloudflared
+    env_file:
+      - .env
+    depends_on:
+      - go2rtc
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${TUNNEL_CREDENTIALS_FILE:-./cloudflared/tunnel.json}:/etc/cloudflared/tunnel.json:ro
+      - ./cloudflared/cert.pem:/etc/cloudflared/cert.pem:ro
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --config
+      - /etc/cloudflared/config.yml
+      - --no-autoupdate
+      - --credentials-file
+      - /etc/cloudflared/tunnel.json
+      - run
+      - ${TUNNEL_NAME}

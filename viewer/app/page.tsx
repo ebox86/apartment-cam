@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
 import { siteConfig } from "../config/site-config";
 
 const LOCALHOST = process.env.NODE_ENV === "development";
@@ -8,10 +9,12 @@ const DEFAULT_API_BASE = LOCALHOST
   ? "http://localhost:3001"
   : "https://cam.ebox86.com";
 const DEFAULT_STREAM_URL = LOCALHOST
-  ? "http://localhost:3001/stream"
-  : "https://cam.ebox86.com/stream";
+  ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
+  : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
 const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
+const ZOOM_HOLD_STEP = 24;
+const ZOOM_HOLD_INTERVAL = 90;
 
 function parseCameraId(value?: string | number | null) {
   const parsed = Number(value);
@@ -233,6 +236,8 @@ async function exitFullscreen() {
 export default function ApartmentCamPage() {
   const camContainerRef = useRef<HTMLDivElement | null>(null);
   const camInnerRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const hideHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -269,12 +274,7 @@ export default function ApartmentCamPage() {
   const cameraId = config.cameraId;
   const apiUrl = (path: string) => `${config.apiBase}${path}`;
   const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
-  const trimmedApiBase = config.apiBase
-    ? config.apiBase.replace(/\/$/, "")
-    : "";
-  const streamProbeTarget = trimmedApiBase
-    ? `${trimmedApiBase}/stream`
-    : streamUrl;
+  const streamProbeTarget = streamUrl;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -309,6 +309,9 @@ export default function ApartmentCamPage() {
   const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
     null
   );
+  const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
+    null
+  );
   const [isMobile, setIsMobile] = useState(false);
   const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
   const [camCollapsed, setCamCollapsed] = useState(false);
@@ -324,6 +327,11 @@ export default function ApartmentCamPage() {
         : 100;
     return { panRange, tiltRange };
   };
+
+  const getZoomButtonClass = (direction: "in" | "out") =>
+    `btn zoom-control${
+      zoomButtonActive === direction ? " zoom-control--active" : ""
+    }`;
 
   useEffect(() => {
     let active = true;
@@ -596,7 +604,6 @@ export default function ApartmentCamPage() {
   const countryName = formatCountryName(countryCode);
   const flagEmoji = countryCodeToFlag(countryCode);
   const offlineStatusLabel = STREAM_OFFLINE_LABEL;
-  const offlineDetailText = streamIssueDetail;
   const overlaysEnabled = !hasError && !isMobile;
   const ptzPanelClassName = `ptz-panel${controlsDisabled ? " ptz-panel--disabled" : ""}`;
   const sharePanelClassName = `share-panel${controlsDisabled ? " share-panel--disabled" : ""}`;
@@ -876,12 +883,7 @@ export default function ApartmentCamPage() {
       streamProbeController.current = null;
     }
   };
-
-  const handleStreamError = () => {
-    setHasError(true);
-    void probeStreamEndpoint();
-  };
-
+  
   const probeStreamEndpoint = useCallback(async () => {
     if (!streamProbeTarget) return true;
     streamProbeController.current?.abort();
@@ -901,12 +903,14 @@ export default function ApartmentCamPage() {
       });
       if (controller.signal.aborted) return true;
 
-      if (res.status === 404 || res.status === 0) {
+      if (res.status === 404) {
         res.body?.cancel?.();
-        return markOffline(res.status === 404 ? "Stream not available" : undefined);
+        return markOffline(
+          res.status === 404 ? "Stream not available" : undefined
+        );
       }
 
-      if (res.status === 405) {
+      if (!res.ok) {
         res.body?.cancel?.();
         res = await fetch(streamProbeTarget, {
           method: "GET",
@@ -916,19 +920,16 @@ export default function ApartmentCamPage() {
         if (controller.signal.aborted) return true;
         if (res.status === 404 || !res.ok) {
           res.body?.cancel?.();
-          return markOffline(res.status === 404 ? "Stream not available" : undefined);
+          return markOffline(
+            res.status === 404 ? "Stream not available" : undefined
+          );
         }
         res.body?.cancel?.();
         return true;
       }
 
-      if (res.ok) {
-        res.body?.cancel?.();
-        return true;
-      }
-
       res.body?.cancel?.();
-      return markOffline();
+      return true;
     } catch (err) {
       if (controller.signal.aborted) return true;
       return markOffline();
@@ -938,6 +939,81 @@ export default function ApartmentCamPage() {
       }
     }
   }, [streamProbeTarget]);
+  
+  const handleStreamError = useCallback(() => {
+    void probeStreamEndpoint();
+  }, [probeStreamEndpoint]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !streamUrl) {
+      return undefined;
+    }
+
+    const cleanupHls = () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+
+    const resetVideoSource = () => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    const attachNative = () => {
+      resetVideoSource();
+      video.src = streamUrl;
+      video.load();
+      void video.play().catch(() => {});
+    };
+
+    const attachHls = () => {
+      const hls = new Hls({
+        startFragPrefetch: true,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 1000,
+        fragLoadingMaxRetryTimeout: 60000,
+      });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (
+          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR &&
+          data.response?.code === 404
+        ) {
+          return;
+        }
+        if (data.fatal) {
+          cleanupHls();
+          handleStreamError();
+        }
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        void video.play().catch(() => {});
+      });
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+    };
+
+    const usesNative =
+      video.canPlayType("application/vnd.apple.mpegurl") !== "";
+
+    if (Hls.isSupported() && !usesNative) {
+      cleanupHls();
+      attachHls();
+    } else {
+      cleanupHls();
+      attachNative();
+    }
+
+    return () => {
+      cleanupHls();
+      resetVideoSource();
+    };
+  }, [streamUrl, handleStreamError]);
 
   useEffect(() => {
     if (!streamProbeTarget) return undefined;
@@ -1033,14 +1109,18 @@ export default function ApartmentCamPage() {
       clearInterval(zoomHoldRef.current);
       zoomHoldRef.current = null;
     }
+    setZoomButtonActive(null);
   };
 
   const startZoomHold = (delta: number) => {
     stopZoomHold();
-    applyRelativeZoom(delta);
+    const direction: "in" | "out" = delta > 0 ? "in" : "out";
+    const step = direction === "in" ? ZOOM_HOLD_STEP : -ZOOM_HOLD_STEP;
+    setZoomButtonActive(direction);
+    applyRelativeZoom(step);
     zoomHoldRef.current = globalThis.setInterval(() => {
-      applyRelativeZoom(delta);
-    }, 200);
+      applyRelativeZoom(step);
+    }, ZOOM_HOLD_INTERVAL);
   };
 
   useEffect(() => {
@@ -1244,12 +1324,18 @@ export default function ApartmentCamPage() {
               >
                       <div className="cam-frame-inner" ref={camInnerRef}>
                         {!hasError ? (
-                          <img
-                            src={streamUrl}
-                            alt={siteConfig.streamAltText}
+                          <video
+                            ref={videoRef}
+                            className="cam-video"
+                            aria-label={siteConfig.streamAltText}
                             draggable={false}
-                            onDragStart={(event) => event.preventDefault()}
-                            onLoad={handleStreamLoad}
+                            muted
+                            autoPlay
+                            playsInline
+                            preload="metadata"
+                            controls={false}
+                            disablePictureInPicture
+                            onCanPlay={handleStreamLoad}
                             onError={handleStreamError}
                           />
                         ) : (
@@ -1262,11 +1348,6 @@ export default function ApartmentCamPage() {
                               <span className="cam-offline-pill">
                                 {offlineStatusLabel}
                               </span>
-                              {offlineDetailText && (
-                                <span className="cam-offline-detail">
-                                  {offlineDetailText}
-                                </span>
-                              )}
                             </div>
                           </div>
                         )}
@@ -1328,116 +1409,116 @@ export default function ApartmentCamPage() {
                           <div className="cam-aim-inner" />
                         </div>
                       )}
+                      {/* Heading overlay */}
+                      {showHeadingOverlay && currentHeading != null && (
+                        <div className="heading-overlay">
+                          <div className="heading-arc" />
+                          {[-60, -30, 0, 30, 60].map((offset) => {
+                            const h = normalizeHeading(currentHeading + offset);
+                            const label =
+                              h === 0
+                                ? "N"
+                                : h === 90
+                                ? "E"
+                                : h === 180
+                                ? "S"
+                                : h === 270
+                                ? "W"
+                                : `${Math.round(h)}`;
+                            return (
+                              <div
+                                key={offset}
+                                className={`heading-line ${
+                                  offset === 0 ? "heading-line-active" : ""
+                                }`}
+                                style={{ left: `${50 + offset * 0.8}%` }}
+                              >
+                                <span className="heading-label">{label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* HUD overlay (minimal) */}
+                      {showHudOverlay && overlaysEnabled && (
+                        <div className="cam-hud cam-hud-minimal">
+                          <div className="cam-hud-top">
+                            <span>PITTSBURGH, PA · APARTMENT-CAM</span>
+                            <span
+                              className={`cam-hud-status${
+                                hasError ? " cam-hud-status--offline" : ""
+                              }`}
+                            >
+                              {hasError ? offlineStatusLabel : "LIVE"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quick overlays */}
+                      {showPtzOverlay && overlaysEnabled && (
+                        <div className="overlay-pill overlay-ptz">
+                          PTZ P {status?.optics.pan ?? "—"} · T{" "}
+                          {status?.optics.tilt ?? "—"} · Z {currentZoom ?? "—"}
+                        </div>
+                      )}
+                      {showTempOverlay && overlaysEnabled && (
+                        <div className="overlay-pill overlay-temp">
+                          Temp{" "}
+                          {status?.temperature?.sensors?.[0]?.celsius?.toFixed(1) ??
+                            "—"}
+                          °C · PCB{" "}
+                          {status?.temperature?.sensors?.[1]?.celsius?.toFixed(1) ??
+                            "—"}
+                          °C
+                        </div>
+                      )}
+                      {showZoomMeter && overlaysEnabled && (
+                        <div className="zoom-mini">
+                          <div className="zoom-mini-track">
+                            <div
+                              className="zoom-mini-fill"
+                              style={{
+                                height: `${Math.max(0, Math.min(100, zoomPercent))}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="zoom-mini-label">Z {currentZoom ?? "—"}</div>
+                        </div>
+                      )}
+                      {showWeatherOverlay && weather && overlaysEnabled && (
+                        <div className="overlay-weather">
+                          {weather.icon && (
+                            <img
+                              src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
+                              alt={weather.description || "Weather"}
+                              className="weather-icon"
+                            />
+                          )}
+                          <div className="weather-meta">
+                            <div className="weather-temp">
+                              {(() => {
+                                const f = cToF(weather.tempC);
+                                return f != null ? `${Math.round(f)}°F` : "—";
+                              })()}
+                            </div>
+                            <div className="weather-desc">
+                              {weather.description || "Weather unavailable"}
+                            </div>
+                            <div className="weather-sub">
+                              Humidity {weather.humidity ?? "—"}% · Wind{" "}
+                              {weather.windKph != null
+                                ? `${(weather.windKph / 1.609).toFixed(1)} mph`
+                                : "—"}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Heading overlay */}
-                {showHeadingOverlay && currentHeading != null && (
-                  <div className="heading-overlay">
-                    <div className="heading-arc" />
-                    {[-60, -30, 0, 30, 60].map((offset) => {
-                      const h = normalizeHeading(currentHeading + offset);
-                      const label =
-                        h === 0
-                          ? "N"
-                          : h === 90
-                          ? "E"
-                          : h === 180
-                          ? "S"
-                          : h === 270
-                          ? "W"
-                          : `${Math.round(h)}`;
-                      return (
-                        <div
-                          key={offset}
-                          className={`heading-line ${
-                            offset === 0 ? "heading-line-active" : ""
-                          }`}
-                          style={{ left: `${50 + offset * 0.8}%` }}
-                        >
-                          <span className="heading-label">{label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* HUD overlay (minimal) */}
-                {showHudOverlay && overlaysEnabled && (
-                  <div className="cam-hud cam-hud-minimal">
-                    <div className="cam-hud-top">
-                      <span>PITTSBURGH, PA · APARTMENT-CAM</span>
-                      <span
-                        className={`cam-hud-status${
-                          hasError ? " cam-hud-status--offline" : ""
-                        }`}
-                      >
-                        {hasError ? offlineStatusLabel : "LIVE"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Quick overlays */}
-                {showPtzOverlay && overlaysEnabled && (
-                  <div className="overlay-pill overlay-ptz">
-                    PTZ P {status?.optics.pan ?? "—"} · T{" "}
-                    {status?.optics.tilt ?? "—"} · Z {currentZoom ?? "—"}
-                  </div>
-                )}
-                {showTempOverlay && overlaysEnabled && (
-                  <div className="overlay-pill overlay-temp">
-                    Temp{" "}
-                    {status?.temperature?.sensors?.[0]?.celsius?.toFixed(1) ??
-                      "—"}
-                    °C · PCB{" "}
-                    {status?.temperature?.sensors?.[1]?.celsius?.toFixed(1) ??
-                      "—"}
-                    °C
-                  </div>
-                )}
-                {showZoomMeter && overlaysEnabled && (
-                  <div className="zoom-mini">
-                    <div className="zoom-mini-track">
-                      <div
-                        className="zoom-mini-fill"
-                        style={{
-                          height: `${Math.max(0, Math.min(100, zoomPercent))}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="zoom-mini-label">Z {currentZoom ?? "—"}</div>
-                  </div>
-                )}
-                {showWeatherOverlay && weather && overlaysEnabled && (
-                  <div className="overlay-weather">
-                    {weather.icon && (
-                      <img
-                        src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
-                        alt={weather.description || "Weather"}
-                        className="weather-icon"
-                      />
-                    )}
-                    <div className="weather-meta">
-                      <div className="weather-temp">
-                        {(() => {
-                          const f = cToF(weather.tempC);
-                          return f != null ? `${Math.round(f)}°F` : "—";
-                        })()}
-                      </div>
-                      <div className="weather-desc">
-                        {weather.description || "Weather unavailable"}
-                      </div>
-                      <div className="weather-sub">
-                        Humidity {weather.humidity ?? "—"}% · Wind{" "}
-                        {weather.windKph != null
-                          ? `${(weather.windKph / 1.609).toFixed(1)} mph`
-                          : "—"}
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* footer under cam */}
                 <div className="cam-footer">
@@ -1573,32 +1654,32 @@ export default function ApartmentCamPage() {
                     <div className="ptz-body">
                       <div className="ptz-buttons">
                         <div className="zoom-stack zoom-stack__primary">
-                          <button
-                            className="btn"
-                            type="button"
-                            onPointerDown={() => startZoomHold(200)}
-                            onPointerUp={stopZoomHold}
-                            onPointerLeave={stopZoomHold}
-                            onPointerCancel={stopZoomHold}
-                            onKeyDown={handleZoomKeyDown(200)}
-                            onKeyUp={handleZoomKeyUp}
-                            disabled={controlsDisabled}
-                          >
-                            ➕ Zoom In
-                          </button>
-                          <button
-                            className="btn"
-                            type="button"
-                            onPointerDown={() => startZoomHold(-200)}
-                            onPointerUp={stopZoomHold}
-                            onPointerLeave={stopZoomHold}
-                            onPointerCancel={stopZoomHold}
-                            onKeyDown={handleZoomKeyDown(-200)}
-                            onKeyUp={handleZoomKeyUp}
-                            disabled={controlsDisabled}
-                          >
-                            ➖ Zoom Out
-                          </button>
+                        <button
+                          className={getZoomButtonClass("in")}
+                          type="button"
+                          onPointerDown={() => startZoomHold(200)}
+                          onPointerUp={stopZoomHold}
+                          onPointerLeave={stopZoomHold}
+                          onPointerCancel={stopZoomHold}
+                          onKeyDown={handleZoomKeyDown(200)}
+                          onKeyUp={handleZoomKeyUp}
+                          disabled={controlsDisabled}
+                        >
+                          ➕ Zoom In
+                        </button>
+                        <button
+                          className={getZoomButtonClass("out")}
+                          type="button"
+                          onPointerDown={() => startZoomHold(-200)}
+                          onPointerUp={stopZoomHold}
+                          onPointerLeave={stopZoomHold}
+                          onPointerCancel={stopZoomHold}
+                          onKeyDown={handleZoomKeyDown(-200)}
+                          onKeyUp={handleZoomKeyUp}
+                          disabled={controlsDisabled}
+                        >
+                          ➖ Zoom Out
+                        </button>
                         </div>
                         <div className="zoom-stack zoom-stack__bounds">
                           <button
@@ -1618,14 +1699,6 @@ export default function ApartmentCamPage() {
                             Max
                           </button>
                         </div>
-                        <button
-                          className="btn zoom-reset"
-                          onClick={goHome}
-                          type="button"
-                          disabled={controlsDisabled}
-                        >
-                          Home / Reset
-                        </button>
                       </div>
 
                       <div className="ptz-arrows">

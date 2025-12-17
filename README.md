@@ -7,23 +7,46 @@
       <img src="viewer/public/logo.png" alt="Apartment Cam logo" width="500" />
     </td>
     <td style="border: none; vertical-align: middle;">
-      A lightweight MJPEG viewer for a high-rise webcam in Pittsburgh (AXIS P3227-LVE Network Camera). The stack is split into a tiny proxy that fronts the camera stream and a Next.js viewer that adds HUD-style overlays, fullscreen controls, and a custom domain via Cloud Run.
+      A lightweight viewer for a high-rise webcam in Pittsburgh (AXIS P3227-LVE Network Camera). The stack now ingests the Axis RTSP feed with go2rtc, publishes HLS through a Cloudflare Tunnel, and keeps the existing Next.js HUD/telemetry UI plus proxy for PTZ/metadata.
     </td>
   </tr>
 </table>
 
 ## What’s inside
 - **viewer/** – Next.js 16 app router UI (HUD overlay, stats panel, fullscreen toggle).
-- **cam-proxy/** – Express passthrough to the camera (pipes MJPEG to the viewer).
+- **cam-proxy/** – Express proxy for telemetry/controls (used by the viewer UI).
+- **go2rtc/** – Configuration for ingesting the Axis RTSP stream and serving HLS/API.
+- **cloudflared/** – Cloudflare Tunnel ingress that exposes `cam.YOUR_DOMAIN` to go2rtc.
 - **.github/workflows/** – GHCR build + Cloud Run deploy (Workload Identity Federation).
 
 ## Architecture
-- Camera MJPEG feed is proxied by `cam-proxy` (`GET /stream`), which forwards the body as-is and sets `Cache-Control: no-store`.
-- Viewer consumes the proxy stream and renders overlays (location, status, “LIVE” pill) plus a stats grid and offline fallback.
-- Containers are built and pushed to GHCR; Cloud Run serves the viewer on the custom domain (`apt-cam.ebox86.com`) with HTTPS.
-- Deploys use GitHub → GCP Workload Identity Federation; the deploy service account trusts the GitHub principal (owner + repo binding).
+- `go2rtc` ingests the Axis RTSP stream (configured via `go2rtc/go2rtc.yaml`) and exposes HLS + a minimal HTTP API on port `1984` with `allow_paths` restricted to `/api`, `/api/streams`, and `/api/stream.m3u8`. That port only exists on the Compose network; `cloudflared` is the public ingress for `cam.YOUR_DOMAIN`.
+- `cloudflared` tunnels `cam.YOUR_DOMAIN` to `http://go2rtc:1984`, so the camera stream is never exposed directly to the public internet.
+- `cam-proxy` remains responsible for camera telemetry, PTZ/zoom controls, and the status endpoints the viewer consumes.
+- The Next.js viewer pulls telemetry from `cam-proxy` and plays the go2rtc HLS endpoint (`/api/stream.m3u8?src=axis&mp4`); Chrome/Firefox use `hls.js`, Safari uses native HLS, and WebRTC works only on the LAN because UDP streams do not flow through the tunnel.
+
+## Environment & configuration
+- Copy `.env.example` to `.env` and fill in your camera + tunnel credentials.
+  - `CAMERA_HOST`, `CAMERA_USERNAME`, `CAMERA_PASSWORD`, and `CAMERA_TIMEOUT_MS` drive the telemetry/proxy endpoints.
+- The Compose command automatically sanitizes `CAMERA_HOST` into `AXIS_HOST` and reuses `CAMERA_USERNAME`, `CAMERA_PASSWORD`, and `CAMERA_STREAM_ID` (defaults to 1) so you do not need to duplicate the `AXIS_*` settings.
+  - `TUNNEL_CREDENTIALS_FILE` should point at the named-tunnel JSON (e.g., `cloudflared/tunnel.json`); keep that file outside of git.
+  - `TUNNEL_NAME` is the named tunnel’s ID or user-friendly name; it is passed directly to `cloudflared tunnel run`.
+  - `TUNNEL_ORIGIN_CERT` lets `cloudflared` prove ownership of the origin; mount it at `cloudflared/cert.pem` so the container can read `/etc/cloudflared/cert.pem`.
+- Update `cloudflared/config.yml` to point `hostname` at your public domain (e.g., `cam.example.com`). The existing ingress already forwards `/` to `http://go2rtc:1984` and returns `http_status:404` for everything else.
+- Keep private credentials out of git; `.env.example` is safe to track, but `.env` should stay local.
 
 ## Running locally
+### Compose services
+Docker Compose now runs `go2rtc`, `cloudflared`, and `cam-proxy` together.
+
+```bash
+docker compose up --build
+# go2rtc: http://localhost:1984
+# cam-proxy: http://localhost:3000
+```
+
+Make sure `.env` is populated (see above) and `cloudflared/config.yml` points at your public hostname. If you need to rebuild the proxy/viewer images, pass `--build` to `docker compose`.
+
 ### Viewer (Next.js)
 ```bash
 cd viewer
@@ -32,13 +55,9 @@ npm run dev
 # open http://localhost:3000
 ```
 
-### Proxy
-```bash
-cd cam-proxy
-npm install
-CAM_URL="http://<your-camera-host>/stream" npm start
-# proxy available on http://localhost:3000/stream
-```
+### Public playback
+- The camera stream is now served as HLS at `https://cam.YOUR_DOMAIN/api/stream.m3u8?src=axis&mp4`. go2rtc exposes that endpoint, `cloudflared` routes the hostname to port `1984`, and the viewer relies on `hls.js` for non-Safari browsers while Safari uses its native HLS support.
+- WebRTC (via go2rtc's `webrtc` module) still works on the LAN, but it generally fails over the Cloudflare Tunnel because UDP traffic cannot be forwarded. Use LAN/VPN/direct exposure if you need WebRTC playback beyond the tunnel.
 
 ## Container builds
 - **Viewer Dockerfile:** `viewer/Dockerfile` (multi-stage, Node 20 Alpine, `npm run build`, `npm prune --production`, `npm start`).
@@ -57,6 +76,6 @@ CAM_URL="http://<your-camera-host>/stream" npm start
   - Optional `CLOUD_RUN_IMAGE` override and app env vars (e.g., `STREAM_URL`, `NEXT_PUBLIC_STREAM_URL`).
 
 ## Notes
-- Custom domain: `apt-cam.ebox86.com` CNAME → `ghs.googlehosted.com`.
-- If fronting with Cloudflare, use DNS-only + Full (strict) to avoid redirect loops.
-- The viewer currently points to the configured stream URL; offline state shows a red banner if the stream fails.
+- The public stream hostname is the one configured in `cloudflared/config.yml` (e.g., `cam.example.com`). Keep that DNS entry behind Cloudflare and let the tunnel handle HTTPS.
+- The viewer continues to use the telemetry endpoints in `cam-proxy` and plays the go2rtc HLS stream; it shows the offline banner whenever the HLS endpoint cannot be reached.
+- WebRTC over the tunnel is unreliable because UDP cannot traverse Cloudflare's HTTP tunnel. Stick to LAN/VPN/direct access if you need WebRTC playback beyond local testing.

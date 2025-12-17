@@ -6,3 +6,7 @@ npm-debug.log*
 .cursor/rules/snyk_rules.mdc
 
 .env
+cloudflared/*.json
+cloudflared/*.pem
+
+viewer/.env.local
