@@ -16,8 +16,6 @@ env:
   CLOUD_RUN_REGION: us-east4
   GCP_PROJECT_ID: portfolio-website-403402
 
-
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -94,7 +92,9 @@ jobs:
           fi
           ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_PROXY_BASE=https://cam.ebox86.com"
           ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_CAMERA_ID=1"
-          ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_STREAM_URL=https://cam.ebox86.com/stream"
+          ENV_FLAGS+=" --set-env-vars NEXT_PUBLIC_STREAM_URL=https://cam.ebox86.com/api/stream.m3u8?src=axis"
+          ENV_FLAGS+=" --set-env-vars STREAM_URL=https://cam.ebox86.com/api/stream.m3u8?src=axis"
+          ENV_FLAGS+=" --set-env-vars NODE_ENV=production"
           gcloud run deploy "$SERVICE" \
             --region "$REGION" \
             --platform managed \
