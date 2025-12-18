@@ -626,6 +626,13 @@ body {
   align-items: flex-end;
 }
 
+.top-bar-viewers {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+}
+
 .top-bar-time-group {
   display: flex;
   align-items: baseline;

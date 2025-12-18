@@ -557,6 +557,29 @@ const capsCache = {
   promise: null,
 };
 
+const VIEWER_HEARTBEAT_TTL_MS = 65 * 1000;
+const viewerHeartbeats = new Map();
+
+function cleanupViewerHeartbeats() {
+  const threshold = Date.now() - VIEWER_HEARTBEAT_TTL_MS;
+  for (const [id, ts] of viewerHeartbeats.entries()) {
+    if (ts < threshold) {
+      viewerHeartbeats.delete(id);
+    }
+  }
+}
+
+function recordViewerHeartbeat(id) {
+  if (!id) return;
+  viewerHeartbeats.set(id, Date.now());
+  cleanupViewerHeartbeats();
+}
+
+function getViewerCount() {
+  cleanupViewerHeartbeats();
+  return viewerHeartbeats.size;
+}
+
 async function buildStatusPayload() {
   const [optics, geolocation, time, device, temperature] = await Promise.all([
     getPtzStatus(),
@@ -768,6 +791,20 @@ app.post("/api/ptz/home", async (_req, res) => {
       .status(502)
       .json({ error: err instanceof Error ? err.message : "unknown error" });
   }
+});
+
+app.post("/api/viewers/heartbeat", (req, res) => {
+  const id = req.body?.id;
+  if (!id || typeof id !== "string") {
+    res.status(400).json({ error: "viewer id required" });
+    return;
+  }
+  recordViewerHeartbeat(id);
+  res.json({ count: getViewerCount() });
+});
+
+app.get("/api/viewers", (_req, res) => {
+  res.json({ count: getViewerCount() });
 });
 
 app.post("/api/zoom", async (req, res) => {

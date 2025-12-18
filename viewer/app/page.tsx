@@ -7,7 +7,7 @@ import { siteConfig } from "../config/site-config";
 const LOCALHOST = process.env.NODE_ENV === "development";
 const DEFAULT_API_BASE = LOCALHOST
   ? "http://localhost:3001"
-  : "https://cam.ebox86.com";
+  : "https://cam-api.ebox86.com";
 const DEFAULT_STREAM_URL = LOCALHOST
   ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
   : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
@@ -16,6 +16,18 @@ const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 const ZOOM_HOLD_STEP = 24;
 const ZOOM_HOLD_INTERVAL = 90;
 const STREAM_STORAGE_KEY = "apartment-cam-stream-url";
+const VIEWER_ID_KEY = "apartment-cam-viewer-id";
+const VIEWER_HEARTBEAT_INTERVAL = 15000;
+
+const generateViewerId = () => {
+  if (
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.randomUUID === "function"
+  ) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `viewer-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+};
 
 function parseCameraId(value?: string | number | null) {
   const parsed = Number(value);
@@ -274,6 +286,31 @@ export default function ApartmentCamPage() {
   });
   const cameraId = config.cameraId;
   const apiUrl = (path: string) => `${config.apiBase}${path}`;
+  const sendViewerHeartbeat = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(apiUrl("/api/viewers/heartbeat"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        if (!res.ok) {
+          setViewerCount(null);
+          return null;
+        }
+        const payload = (await res.json()) as { count?: number };
+        if (typeof payload.count === "number") {
+          setViewerCount(payload.count);
+          return payload.count;
+        }
+        setViewerCount(null);
+      } catch {
+        setViewerCount(null);
+      }
+      return null;
+    },
+    [apiUrl]
+  );
   const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
   const streamProbeTarget = streamUrl;
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -310,6 +347,8 @@ export default function ApartmentCamPage() {
   const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
     null
   );
+  const [viewerCount, setViewerCount] = useState<number | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     null
   );
@@ -383,6 +422,31 @@ export default function ApartmentCamPage() {
       setViewerUrl(window.location.href);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let stored = window.localStorage.getItem(VIEWER_ID_KEY);
+    if (!stored) {
+      stored = generateViewerId();
+      window.localStorage.setItem(VIEWER_ID_KEY, stored);
+    }
+    setViewerId(stored);
+  }, []);
+
+  useEffect(() => {
+    if (!viewerId) return undefined;
+    let active = true;
+    const send = () => {
+      if (!active) return;
+      void sendViewerHeartbeat(viewerId);
+    };
+    send();
+    const intervalId = globalThis.setInterval(send, VIEWER_HEARTBEAT_INTERVAL);
+    return () => {
+      active = false;
+      globalThis.clearInterval(intervalId);
+    };
+  }, [viewerId, sendViewerHeartbeat]);
 
   useEffect(() => {
     if (!shareStatus) return;
@@ -1189,6 +1253,12 @@ export default function ApartmentCamPage() {
                 {utcClock || "----/--/-- --:--:--"}
               </span>
             </div>
+          </div>
+          <div className="top-bar-viewers">
+            <span className="meta-label">VIEWERS</span>
+            <span className="meta-value meta-mono">
+              {viewerCount != null ? viewerCount : "—"}
+            </span>
           </div>
           <span className="flag-avatar" title={countryName || "Country"}>
             {flagEmoji}
