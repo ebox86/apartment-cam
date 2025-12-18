@@ -626,13 +626,6 @@ body {
   align-items: flex-end;
 }
 
-.top-bar-viewers {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  align-items: flex-end;
-}
-
 .top-bar-time-group {
   display: flex;
   align-items: baseline;
@@ -1158,8 +1151,28 @@ body {
 
   .cam-footer-right {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  .cam-footer-viewers {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .cam-footer-viewers__icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .cam-footer-viewers__count {
+    font-weight: 600;
+    min-width: 24px;
+    text-align: right;
   }
   
   /* common bits reused */

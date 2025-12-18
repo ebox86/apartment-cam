@@ -1254,12 +1254,6 @@ export default function ApartmentCamPage() {
               </span>
             </div>
           </div>
-          <div className="top-bar-viewers">
-            <span className="meta-label">VIEWERS</span>
-            <span className="meta-value meta-mono">
-              {viewerCount != null ? viewerCount : "—"}
-            </span>
-          </div>
           <span className="flag-avatar" title={countryName || "Country"}>
             {flagEmoji}
           </span>
@@ -1597,6 +1591,18 @@ export default function ApartmentCamPage() {
                     {siteConfig.headerText ? <h2>{siteConfig.headerText}</h2> : null}
                   </div>
                   <div className="cam-footer-right cam-footer-actions">
+                    <div
+                      className="cam-footer-viewers"
+                      aria-live="polite"
+                      aria-label={`Viewers: ${viewerCount != null ? viewerCount : "—"}`}
+                    >
+                      <span className="cam-footer-viewers__icon" aria-hidden="true">
+                        👤
+                      </span>
+                      <span className="cam-footer-viewers__count">
+                        {viewerCount != null ? viewerCount : "—"}
+                      </span>
+                    </div>
                     {!isMobile && (
                       <button
                         className="btn"
