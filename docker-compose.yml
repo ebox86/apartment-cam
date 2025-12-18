@@ -13,6 +13,7 @@ services:
     container_name: apartment-go2rtc
     env_file:
       - .env
+    ports: ["1984:1984"]
     environment:
       AXIS_USER: ${CAMERA_USERNAME}
       AXIS_PASS: ${CAMERA_PASSWORD}
