@@ -5,9 +5,8 @@ import Hls from "hls.js";
 import { siteConfig } from "../config/site-config";
 
 const LOCALHOST = process.env.NODE_ENV === "development";
-const DEFAULT_API_BASE = LOCALHOST
-  ? "http://localhost:3001"
-  : "https://cam-api.ebox86.com";
+const INTERNAL_PROXY_BASE = "/api/cam-proxy";
+const DEFAULT_API_BASE = INTERNAL_PROXY_BASE;
 const DEFAULT_STREAM_URL = LOCALHOST
   ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
   : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
@@ -329,32 +328,47 @@ export default function ApartmentCamPage() {
   const [showHeadingOverlay, setShowHeadingOverlay] = useState(false);
   const [showPtzOverlay, setShowPtzOverlay] = useState(false);
   const [showTempOverlay, setShowTempOverlay] = useState(false);
-  const [showZoomMeter, setShowZoomMeter] = useState(false);
-  const [showWeatherOverlay, setShowWeatherOverlay] = useState(false);
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [locationLabelValue, setLocationLabelValue] = useState(
-    siteConfig.locationLabel
+const [showZoomMeter, setShowZoomMeter] = useState(false);
+const [showWeatherOverlay, setShowWeatherOverlay] = useState(false);
+const [weather, setWeather] = useState<WeatherData | null>(null);
+const [weatherError, setWeatherError] = useState<string | null>(null);
+const [locationLabelValue, setLocationLabelValue] = useState(
+  siteConfig.locationLabel
+);
+const [titleLocationValue, setTitleLocationValue] = useState(
+  siteConfig.siteTitleLocationFallback
+);
+const [countryCode, setCountryCode] = useState<string | null>(
+  siteConfig.defaultCountryCode
+);
+const [shareStatus, setShareStatus] = useState<string | null>(null);
+const [viewerUrl, setViewerUrl] = useState("");
+const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
+  null
+);
+const [viewerCount, setViewerCount] = useState<number | null>(null);
+const [viewerId, setViewerId] = useState<string | null>(null);
+const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
+  null
+);
+const [isMobile, setIsMobile] = useState(false);
+const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
+const [camCollapsed, setCamCollapsed] = useState(false);
+
+  const ViewerCountPill = ({ className }: { className?: string }) => (
+    <div
+      className={`cam-footer-viewers cam-footer-pill ${className || ""}`}
+      aria-live="polite"
+      aria-label={`Viewers: ${viewerCount != null ? viewerCount : "—"}`}
+    >
+      <span className="cam-footer-viewers__icon" aria-hidden="true">
+        👤
+      </span>
+      <span className="cam-footer-viewers__count">
+        {viewerCount != null ? viewerCount : "—"}
+      </span>
+    </div>
   );
-  const [titleLocationValue, setTitleLocationValue] = useState(
-    siteConfig.siteTitleLocationFallback
-  );
-  const [countryCode, setCountryCode] = useState<string | null>(
-    siteConfig.defaultCountryCode
-  );
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
-  const [viewerUrl, setViewerUrl] = useState("");
-  const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
-    null
-  );
-  const [viewerCount, setViewerCount] = useState<number | null>(null);
-  const [viewerId, setViewerId] = useState<string | null>(null);
-  const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
-    null
-  );
-  const [isMobile, setIsMobile] = useState(false);
-  const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
-  const [camCollapsed, setCamCollapsed] = useState(false);
 
   const getPanTiltRange = () => {
     const panRange =
@@ -501,7 +515,7 @@ export default function ApartmentCamPage() {
       setClock(
         now.toLocaleString(undefined, {
           hour12: false,
-          year: "numeric",
+          year: "2-digit",
           month: "2-digit",
           day: "2-digit",
           hour: "2-digit",
@@ -513,7 +527,7 @@ export default function ApartmentCamPage() {
         now.toLocaleString(undefined, {
           hour12: false,
           timeZone: "UTC",
-          year: "numeric",
+          year: "2-digit",
           month: "2-digit",
           day: "2-digit",
           hour: "2-digit",
@@ -1263,12 +1277,13 @@ export default function ApartmentCamPage() {
 
       {/* Centered camera pane */}
       <main className="center-shell">
-        <div
-          className={`stream-card${
-            streamCardCollapsed ? " stream-card--collapsed" : ""
-          }`}
-        >
-          <div className="stream-card__header">
+        <div className="stream-card-stack">
+          <div
+            className={`stream-card${
+              streamCardCollapsed ? " stream-card--collapsed" : ""
+            }`}
+          >
+            <div className="stream-card__header">
             <div>
               <div className="stream-card__title">
                 {isMobile ? "Primary cam" : "Main stream"}
@@ -1587,22 +1602,50 @@ export default function ApartmentCamPage() {
 
                 {/* footer under cam */}
                 <div className="cam-footer">
-                  <div className="cam-footer-left">
-                    {siteConfig.headerText ? <h2>{siteConfig.headerText}</h2> : null}
+                <div className="cam-footer-left">
+                    <div className="cam-footer-title">
+                      {siteConfig.headerText ? <h2>{siteConfig.headerText}</h2> : null}
+                      {siteConfig.headerDescription ? (
+                        <p className="cam-footer-title-description">
+                          {siteConfig.headerDescription}
+                        </p>
+                      ) : null}
+                    </div>
+                    {isMobile && (
+                      <div className="cam-footer-mobile-bar">
+                        <ViewerCountPill className="cam-footer-viewers-mobile" />
+                        <button
+                          className="cam-footer-pill-btn"
+                          type="button"
+                          onClick={() => copyToClipboard(viewerUrl, "Viewer link")}
+                          disabled={!viewerUrl || controlsDisabled}
+                        >
+                          Copy link
+                        </button>
+                        <button
+                          className="cam-footer-pill-btn"
+                          type="button"
+                          onClick={handleNativeShare}
+                          disabled={controlsDisabled}
+                        >
+                          Share
+                        </button>
+                        <button
+                          className="cam-footer-pill-btn cam-footer-fullscreen-btn"
+                          type="button"
+                          onClick={handleFullscreen}
+                          disabled={controlsDisabled}
+                          aria-label={
+                            isFullscreen ? "Exit fullscreen" : "Fullscreen"
+                          }
+                        >
+                          <span aria-hidden="true">⤢</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="cam-footer-right cam-footer-actions">
-                    <div
-                      className="cam-footer-viewers"
-                      aria-live="polite"
-                      aria-label={`Viewers: ${viewerCount != null ? viewerCount : "—"}`}
-                    >
-                      <span className="cam-footer-viewers__icon" aria-hidden="true">
-                        👤
-                      </span>
-                      <span className="cam-footer-viewers__count">
-                        {viewerCount != null ? viewerCount : "—"}
-                      </span>
-                    </div>
+                    <ViewerCountPill className="cam-footer-viewers-desktop" />
                     {!isMobile && (
                       <button
                         className="btn"
@@ -1614,7 +1657,7 @@ export default function ApartmentCamPage() {
                       </button>
                     )}
                     <button
-                      className="btn"
+                      className="btn cam-footer-fullscreen-desktop"
                       type="button"
                       onClick={handleFullscreen}
                       disabled={controlsDisabled}
@@ -1668,7 +1711,7 @@ export default function ApartmentCamPage() {
                           </div>
                         )}
                       </div>
-                      <div className="stats-item">
+                      <div className="stats-item stats-item--time">
                         <div className="stats-label">TIME</div>
                         <div className="stats-value meta-mono">
                           {status?.time.cameraTime || "—"}
@@ -1677,7 +1720,7 @@ export default function ApartmentCamPage() {
                           <div className="app-subtitle">{status.time.timezone}</div>
                         )}
                       </div>
-                      <div className="stats-item">
+                      <div className="stats-item stats-item--temperature">
                         <div className="stats-label">TEMPERATURES</div>
                         <div className="stats-value meta-mono">
                           {status?.temperature
@@ -1692,19 +1735,7 @@ export default function ApartmentCamPage() {
                             : "—"}
                         </div>
                       </div>
-                      <div className="stats-item">
-                        <div className="stats-label">HEATER</div>
-                        <div className="stats-value meta-mono">
-                          {status?.temperature
-                            ? `${status.temperature.heater.status ?? "Unknown"}${
-                                status.temperature.heater.timeUntilStop != null
-                                  ? ` · ${status.temperature.heater.timeUntilStop}s`
-                                  : ""
-                              }`
-                            : "—"}
-                        </div>
-                      </div>
-                      <div className="stats-item">
+                      <div className="stats-item stats-item--ptz-data">
                         <div className="stats-label">PTZ</div>
                         <div className="stats-value meta-mono">
                           Zoom {currentZoom ?? "—"}
@@ -1917,6 +1948,17 @@ export default function ApartmentCamPage() {
               </aside>
             </div>
           </div>
+          </div>
+          {isMobile && (
+            <button
+              className="btn mobile-add-camera"
+              type="button"
+              disabled
+              aria-label="Add camera (coming soon)"
+            >
+              Add camera
+            </button>
+          )}
         </div>
       </main>
     </div>

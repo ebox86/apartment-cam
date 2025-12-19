@@ -667,6 +667,14 @@ body {
     flex-direction: column;
   }
 
+  .stream-card-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    align-items: center;
+  }
+
   .stream-card__header {
     display: flex;
     align-items: center;
@@ -1149,6 +1157,83 @@ body {
     color: var(--text);
   }
 
+  .cam-footer-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cam-footer-title-description {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .cam-footer-mobile-bar {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .cam-footer-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+
+  .cam-footer-pill-btn {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+
+  .cam-footer-pill-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cam-footer-pill-btn:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(66, 245, 176, 0.4);
+  }
+
+  .cam-footer-fullscreen-btn span {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .cam-footer-right {
     display: flex;
     align-items: center;
@@ -1587,6 +1672,20 @@ body {
       display: block;
     }
 
+    .top-bar-right {
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .top-bar-time-stack .meta-value {
+      font-size: 9px;
+    }
+
+    .flag-avatar {
+      display: none;
+    }
+
     .stream-card {
       border-radius: 18px;
     }
@@ -1622,6 +1721,7 @@ body {
       align-items: stretch;
       justify-content: flex-start;
       gap: 6px;
+      display: none;
     }
 
     .cam-footer-right .btn {
@@ -1629,8 +1729,39 @@ body {
       justify-content: center;
     }
 
+    .cam-footer-mobile-bar {
+      display: flex;
+    }
+
+    .mobile-add-camera {
+      width: 100%;
+      margin-top: 12px;
+      justify-content: center;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .cam-footer-title {
+      display: none;
+    }
+
+
     .cam-controls-grid {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ptz-panel {
+      grid-row: 1;
+    }
+
+    .stats-panel {
+      grid-row: 2;
+    }
+
+    .stats-item--time,
+    .stats-item--temperature,
+    .stats-item--ptz-data {
+      display: none;
     }
 
     .layer-panel {
