@@ -351,9 +351,12 @@ const [viewerId, setViewerId] = useState<string | null>(null);
 const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   null
 );
-const [isMobile, setIsMobile] = useState(false);
-const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
-const [camCollapsed, setCamCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
+  const [camCollapsed, setCamCollapsed] = useState(false);
+  const [streamRetryKey, setStreamRetryKey] = useState(0);
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ViewerCountPill = ({ className }: { className?: string }) => (
     <div
@@ -492,6 +495,15 @@ const [camCollapsed, setCamCollapsed] = useState(false);
       if (wheelIndicatorTimer.current) {
         globalThis.clearTimeout(wheelIndicatorTimer.current);
         wheelIndicatorTimer.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        globalThis.clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
   }, []);
@@ -976,6 +988,11 @@ const [camCollapsed, setCamCollapsed] = useState(false);
       streamProbeController.current.abort();
       streamProbeController.current = null;
     }
+    if (retryTimeoutRef.current) {
+      globalThis.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    setAutoRetryCount(0);
   };
   
   const probeStreamEndpoint = useCallback(async () => {
@@ -1019,9 +1036,35 @@ const [camCollapsed, setCamCollapsed] = useState(false);
     }
   }, [streamProbeTarget]);
   
+  const scheduleStreamRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      globalThis.clearTimeout(retryTimeoutRef.current);
+    }
+    setAutoRetryCount((count) => {
+      const next = count + 1;
+      const delay = Math.min(30000, 5000 + next * 5000);
+      retryTimeoutRef.current = globalThis.setTimeout(() => {
+        setStreamRetryKey((key) => key + 1);
+      }, delay);
+      return next;
+    });
+  }, []);
+
+  const retryStream = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      globalThis.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    setAutoRetryCount(0);
+    setHasError(false);
+    setStreamRetryKey((key) => key + 1);
+  }, []);
+
   const handleStreamError = useCallback(() => {
+    setHasError(true);
+    scheduleStreamRetry();
     void probeStreamEndpoint();
-  }, [probeStreamEndpoint]);
+  }, [probeStreamEndpoint, scheduleStreamRetry]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1092,7 +1135,7 @@ const [camCollapsed, setCamCollapsed] = useState(false);
       cleanupHls();
       resetVideoSource();
     };
-  }, [streamUrl, handleStreamError]);
+  }, [streamUrl, handleStreamError, streamRetryKey]);
 
   useEffect(() => {
     if (!streamProbeTarget) return undefined;
@@ -1428,6 +1471,17 @@ const [camCollapsed, setCamCollapsed] = useState(false);
                               <span className="cam-offline-pill">
                                 {offlineStatusLabel}
                               </span>
+                              <div className="cam-offline-detail">
+                                {streamIssueDetail || "Stream unavailable"}
+                              </div>
+                              <button
+                                className="btn cam-offline-button"
+                                type="button"
+                                onClick={retryStream}
+                                disabled={controlsDisabled}
+                              >
+                                Retry stream
+                              </button>
                             </div>
                           </div>
                         )}
