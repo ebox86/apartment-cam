@@ -531,7 +531,22 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       try {
         setLoadingStatus(true);
         const res = await fetch(apiUrl("/api/status"), { cache: "no-store" });
-        if (!res.ok) throw new Error(`Status HTTP ${res.status}`);
+        if (!res.ok) {
+          if (mounted) {
+            const baseHint =
+              config.apiBase === INTERNAL_PROXY_BASE
+                ? "Start cam-proxy on http://localhost:3001 or set NEXT_PUBLIC_PROXY_BASE."
+                : `Check api base: ${config.apiBase}.`;
+            const message =
+              res.status === 404
+                ? `Status API not found. ${baseHint}`
+                : res.status >= 500
+                ? `Status API unavailable (${res.status}).`
+                : `Status API error (${res.status}).`;
+            setApiError(message);
+          }
+          return;
+        }
         const data = (await res.json()) as StatusResponse;
         if (mounted) {
           setStatus(data);
@@ -540,7 +555,11 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       } catch (err) {
         if (mounted) {
           const message = err instanceof Error ? err.message : "Unknown error";
-          setApiError(message);
+          const friendly =
+            message === "Failed to fetch"
+              ? "Unable to reach status API. Check cam-proxy or NEXT_PUBLIC_PROXY_BASE."
+              : message;
+          setApiError(friendly);
         }
       } finally {
         if (mounted) setLoadingStatus(false);
@@ -947,6 +966,13 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       retryTimeoutRef.current = null;
     }
     setAutoRetryCount(0);
+    const video = videoRef.current;
+    if (video) {
+      video.muted = true;
+      void video.play().catch(() => {
+        /* Safari may reject autoplay; we only suppress errors */
+      });
+    }
   };
   
   const probeStreamEndpoint = useCallback(async () => {
@@ -1008,6 +1034,15 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     });
   }, []);
 
+  const stopAutoRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      globalThis.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    setStreamRecovering(false);
+    setAutoRetryCount(0);
+  }, []);
+
   const retryStream = useCallback(() => {
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
@@ -1019,18 +1054,36 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     setStreamRetryKey((key) => key + 1);
   }, []);
 
-  const handleStreamError = useCallback(() => {
-    setHasError(true);
-    scheduleStreamRetry();
-    void probeStreamEndpoint();
-  }, [probeStreamEndpoint, scheduleStreamRetry]);
+  const handleStreamError = useCallback(
+    (info?: { statusCode?: number; detail?: string; allowRetry?: boolean }) => {
+      setHasError(true);
+      if (info?.detail) {
+        setStreamIssueDetail(info.detail);
+      }
+
+      const statusCode = info?.statusCode;
+      const isOfflineStatus =
+        statusCode === 404 ||
+        statusCode === 410 ||
+        (statusCode != null && statusCode >= 500);
+
+      if (info?.allowRetry === false || isOfflineStatus) {
+        stopAutoRetry();
+        return;
+      }
+
+      scheduleStreamRetry();
+      void probeStreamEndpoint().then((online) => {
+        if (!online) {
+          stopAutoRetry();
+        }
+      });
+    },
+    [probeStreamEndpoint, scheduleStreamRetry, stopAutoRetry]
+  );
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !streamUrl) {
-      return undefined;
-    }
-
     const cleanupHls = () => {
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -1038,11 +1091,22 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       }
     };
 
+    if (!video || !streamUrl) {
+      cleanupHls();
+      return undefined;
+    }
+
     const resetVideoSource = () => {
       video.pause();
       video.removeAttribute("src");
       video.load();
     };
+
+    if (hasError && !streamRecovering) {
+      cleanupHls();
+      resetVideoSource();
+      return undefined;
+    }
 
     const attachNative = () => {
       resetVideoSource();
@@ -1060,13 +1124,29 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       });
       hlsRef.current = hls;
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        const statusCode = data.response?.code;
         if (
           data.type === Hls.ErrorTypes.NETWORK_ERROR &&
           data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR &&
-          data.response?.code === 404
+          statusCode === 404
         ) {
           return;
         }
+        const isOfflineStatus =
+          (statusCode === 404 && data.details !== Hls.ErrorDetails.FRAG_LOAD_ERROR) ||
+          statusCode === 410 ||
+          (statusCode != null && statusCode >= 500);
+
+        if (isOfflineStatus) {
+          cleanupHls();
+          handleStreamError({
+            statusCode,
+            detail: statusCode === 404 ? "Stream not available" : "Stream unavailable",
+            allowRetry: false,
+          });
+          return;
+        }
+
         if (data.fatal) {
           cleanupHls();
           handleStreamError();
@@ -1094,7 +1174,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       cleanupHls();
       resetVideoSource();
     };
-  }, [streamUrl, handleStreamError, streamRetryKey]);
+  }, [streamUrl, handleStreamError, streamRetryKey, hasError, streamRecovering]);
 
   useEffect(() => {
     if (!streamProbeTarget) return undefined;
@@ -1103,7 +1183,11 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     const checkStream = async () => {
       const online = await probeStreamEndpoint();
       if (!active) return;
-      if (online) setStreamIssueDetail(null);
+      if (online) {
+        setStreamIssueDetail(null);
+      } else {
+        stopAutoRetry();
+      }
       setHasError(!online);
     };
 
@@ -1116,7 +1200,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       active = false;
       globalThis.clearInterval(intervalId);
     };
-  }, [streamProbeTarget, probeStreamEndpoint]);
+  }, [streamProbeTarget, probeStreamEndpoint, stopAutoRetry]);
 
   const handleClickPanZoom = (clientX: number, clientY: number) => {
     if (!camContainerRef.current) return;
