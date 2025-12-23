@@ -13,6 +13,7 @@ services:
     container_name: apartment-go2rtc
     env_file:
       - .env
+    ports: ["1984:1984"]
     environment:
       AXIS_USER: ${CAMERA_USERNAME}
       AXIS_PASS: ${CAMERA_PASSWORD}
@@ -44,6 +45,10 @@ services:
       - ${TUNNEL_CREDENTIALS_FILE:-./cloudflared/tunnel.json}:/etc/cloudflared/tunnel.json:ro
       - ./cloudflared/cert.pem:/etc/cloudflared/cert.pem:ro
     restart: unless-stopped
+    cap_add:
+      - NET_RAW
+    sysctls:
+      net.ipv4.ping_group_range: "0 65535"
     command:
       - tunnel
       - --config
