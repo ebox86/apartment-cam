@@ -1358,7 +1358,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                             onError={handleStreamError}
                           />
                         )}
-                        {hasError && (
+                      {hasError && !streamRecovering && (
                           <div className="cam-offline">
                             <canvas
                               ref={tvCanvasRef}
