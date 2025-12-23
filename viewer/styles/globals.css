@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
     --bg: #050608;
     --panel: #101318;
@@ -108,7 +112,7 @@ body {
   .cam-frame-inner {
     position: relative;
     width: 100%;
-    padding-top: 56.25%; /* 16:9 */
+    aspect-ratio: 16 / 9;
     overflow: hidden;
   }
   
@@ -129,20 +133,18 @@ body {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: rgba(5, 6, 8, 0.7);
     border-radius: 10px;
-    z-index: 6;
     pointer-events: none;
     text-transform: uppercase;
     letter-spacing: 0.26em;
-    font-size: 11px;
+    font-size: 13px;
     color: #ffd400;
   }
 
   .loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    width: 44px;
+    height: 44px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
     border-top-color: #ffd400;
     border-radius: 50%;
     animation: loading-spin 0.9s linear infinite;
@@ -214,6 +216,16 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .viewer-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  
+  .viewer-header-title {
+    color: #facc15;
   }
   
   .btn:disabled {
@@ -461,7 +473,7 @@ body {
     animation: scanline 3.5s linear infinite, noise-pulse 6s ease-in-out infinite;
   }
 
-  .cam-offline::after {
+ .cam-offline::after {
     background-image: radial-gradient(
         rgba(255, 255, 255, 0.2) 0.5px,
         rgba(255, 255, 255, 0) 0.6px
@@ -578,96 +590,8 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 0 8px 18px;
+  padding: 0 0 18px;
 }
-  
-  /* fixed top bar */
-  .top-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 68px; /* a bit taller to fit logo */
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 20px;
-    background: #0a0c10;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-    z-index: 10;
-  }
-  
-  .top-bar-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  
-  .top-bar-logo img {
-    display: block;
-    width: 70px;
-    height: 70px;
-    object-fit: contain;
-  }
-  
-  .top-bar-text {
-    display: flex;
-    flex-direction: column;
-  }
-  
-  .top-bar-title {
-    font-size: 13px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--text);
-  }
-  
-.top-bar-subtitle {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.top-bar-subtitle--location {
-  display: none;
-}
-
-.top-bar-subtitle--meta {
-  display: block;
-}
-
-.top-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.top-bar-time-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-end;
-}
-
-.top-bar-time-group {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.flag-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 16px;
-}
-  
   
   .center-shell {
     flex: 1;
@@ -675,9 +599,15 @@ body {
     align-items: flex-start;
     justify-content: center;
     width: 100%;
-    padding: 92px 6px 32px;
+    padding: 112px 16px 32px;
     box-sizing: border-box;
     overflow: visible;
+  }
+
+  @media (max-width: 768px) {
+    .center-shell {
+      padding: 180px 16px 32px;
+    }
   }
 
   .stream-card {
@@ -1686,28 +1616,6 @@ body {
 
     .app-root {
       padding-bottom: 0;
-    }
-
-    .top-bar-subtitle--meta {
-      display: none;
-    }
-
-    .top-bar-subtitle--location {
-      display: block;
-    }
-
-    .top-bar-right {
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 4px;
-    }
-
-    .top-bar-time-stack .meta-value {
-      font-size: 9px;
-    }
-
-    .flag-avatar {
-      display: none;
     }
 
     .stream-card {

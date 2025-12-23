@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { siteConfig } from "../config/site-config";
+import ViewerHeader from "./components/ViewerHeader";
 
 const LOCALHOST = process.env.NODE_ENV === "development";
 const INTERNAL_PROXY_BASE = "/api/cam-proxy";
@@ -17,6 +18,9 @@ const ZOOM_HOLD_INTERVAL = 90;
 const STREAM_STORAGE_KEY = "apartment-cam-stream-url";
 const VIEWER_ID_KEY = "apartment-cam-viewer-id";
 const VIEWER_HEARTBEAT_INTERVAL = 15000;
+const STREAM_RETRY_BASE_DELAY = 2000;
+const STREAM_RETRY_INCREMENT = 2000;
+const STREAM_RETRY_MAX_DELAY = 20000;
 
 const generateViewerId = () => {
   if (
@@ -164,24 +168,6 @@ function buildLocationLabel(
   return parts.join(", ");
 }
 
-function countryCodeToFlag(code?: string | null) {
-  if (!code) return "🏳️";
-  const normalized = code.toUpperCase();
-  if (normalized.length !== 2) return "🏳️";
-  const base = 0x1f1e6;
-  const first = normalized.charCodeAt(0);
-  const second = normalized.charCodeAt(1);
-  if (
-    first < 65 ||
-    first > 90 ||
-    second < 65 ||
-    second > 90
-  ) {
-    return "🏳️";
-  }
-  return String.fromCodePoint(base + first - 65, base + second - 65);
-}
-
 const FULLSCREEN_CHANGE_EVENTS = [
   "fullscreenchange",
   "webkitfullscreenchange",
@@ -315,8 +301,6 @@ export default function ApartmentCamPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [clock, setClock] = useState<string>("");
-  const [utcClock, setUtcClock] = useState<string>("");
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [caps, setCaps] = useState<PtzCaps | null>(null);
   const [hudVisible, setHudVisible] = useState(true);
@@ -343,20 +327,20 @@ const [countryCode, setCountryCode] = useState<string | null>(
 );
 const [shareStatus, setShareStatus] = useState<string | null>(null);
 const [viewerUrl, setViewerUrl] = useState("");
-const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
-  null
-);
-const [viewerCount, setViewerCount] = useState<number | null>(null);
-const [viewerId, setViewerId] = useState<string | null>(null);
+  const [streamIssueDetail, setStreamIssueDetail] = useState<string | null>(
+    null
+  );
+  const [viewerCount, setViewerCount] = useState<number | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
 const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   null
 );
   const [isMobile, setIsMobile] = useState(false);
   const [streamCardCollapsed, setStreamCardCollapsed] = useState(false);
-  const [camCollapsed, setCamCollapsed] = useState(false);
   const [streamRetryKey, setStreamRetryKey] = useState(0);
   const [autoRetryCount, setAutoRetryCount] = useState(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [streamRecovering, setStreamRecovering] = useState(false);
 
   const ViewerCountPill = ({ className }: { className?: string }) => (
     <div
@@ -520,40 +504,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     }
   }, [isMobile]);
 
-  // live clock with seconds
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      setClock(
-        now.toLocaleString(undefined, {
-          hour12: false,
-          year: "2-digit",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      );
-      setUtcClock(
-        now.toLocaleString(undefined, {
-          hour12: false,
-          timeZone: "UTC",
-          year: "2-digit",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      );
-    };
-
-    updateClock();
-    const id = setInterval(updateClock, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   // fullscreen tracking
   useEffect(() => {
     const handleFsChange = () => {
@@ -574,6 +524,10 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     let mounted = true;
 
     const fetchStatus = async () => {
+      if (hasError) {
+        if (mounted) setLoadingStatus(false);
+        return;
+      }
       try {
         setLoadingStatus(true);
         const res = await fetch(apiUrl("/api/status"), { cache: "no-store" });
@@ -614,7 +568,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       mounted = false;
       clearInterval(statusId);
     };
-  }, [config.apiBase]);
+  }, [config.apiBase, hasError]);
 
   // weather fetch (OpenWeather)
   useEffect(() => {
@@ -698,19 +652,22 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     ((currentZoom - zoomMin) / (zoomMax - zoomMin || 1)) * 100;
   const zoomAtExtremeOut =
     caps && caps.minZoom != null ? currentZoom <= caps.minZoom : false;
+  const spinnerVisible =
+    (loadingStatus && !status && !hasError) || streamRecovering;
   const reticleActive =
-    showReticle && !hasError && !loadingStatus && !zoomAtExtremeOut && !isMobile;
+    showReticle &&
+    !hasError &&
+    !loadingStatus &&
+    !spinnerVisible &&
+    !zoomAtExtremeOut &&
+    !isMobile;
   const locationTitle = titleLocationValue || siteConfig.siteTitleLocationFallback;
-  const topBarTitle = isMobile
-    ? siteConfig.siteTitle
-    : `${siteConfig.siteTitlePrefix}${locationTitle}`;
+  const topBarTitle = siteConfig.siteTitle;
   const controlsDisabled = hasError;
   const locationDisplayValue =
     status?.geolocation && locationLabelValue ? locationLabelValue : "—";
-  const countryName = formatCountryName(countryCode);
-  const flagEmoji = countryCodeToFlag(countryCode);
   const offlineStatusLabel = STREAM_OFFLINE_LABEL;
-  const overlaysEnabled = !hasError && !isMobile;
+  const overlaysEnabled = !hasError && !isMobile && !spinnerVisible;
   const ptzPanelClassName = `ptz-panel${controlsDisabled ? " ptz-panel--disabled" : ""}`;
   const sharePanelClassName = `share-panel${controlsDisabled ? " share-panel--disabled" : ""}`;
 
@@ -722,10 +679,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
 
   const toggleStreamCard = () => {
     setStreamCardCollapsed((prev) => !prev);
-  };
-
-  const toggleCamCollapse = () => {
-    setCamCollapsed((prev) => !prev);
   };
 
   useEffect(() => {
@@ -862,7 +815,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   }, [handleWheelZoom]);
 
   useEffect(() => {
-    if (!hasError) return undefined;
+    if (!hasError || streamRecovering) return undefined;
     const canvas = tvCanvasRef.current;
     if (!canvas) return undefined;
     const ctx = canvas.getContext("2d");
@@ -979,10 +932,11 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       window.removeEventListener("resize", handleResize);
       window.cancelAnimationFrame(animationFrameId);
     };
-  }, [hasError, streamUrl]);
+  }, [hasError, streamRecovering, streamUrl]);
 
   const handleStreamLoad = () => {
     setHasError(false);
+    setStreamRecovering(false);
     setStreamIssueDetail(null);
     if (streamProbeController.current) {
       streamProbeController.current.abort();
@@ -1040,9 +994,13 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
     }
+    setStreamRecovering(true);
     setAutoRetryCount((count) => {
       const next = count + 1;
-      const delay = Math.min(30000, 5000 + next * 5000);
+      const delay = Math.min(
+        STREAM_RETRY_MAX_DELAY,
+        STREAM_RETRY_BASE_DELAY + next * STREAM_RETRY_INCREMENT
+      );
       retryTimeoutRef.current = globalThis.setTimeout(() => {
         setStreamRetryKey((key) => key + 1);
       }, delay);
@@ -1056,6 +1014,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       retryTimeoutRef.current = null;
     }
     setAutoRetryCount(0);
+    setStreamRecovering(true);
     setHasError(false);
     setStreamRetryKey((key) => key + 1);
   }, []);
@@ -1275,47 +1234,10 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
 
   return (
     <div className="app-root">
-      {/* Fixed top bar */}
-      <header className="top-bar">
-        <div className="top-bar-left">
-          <div className="top-bar-logo">
-            <img
-              src="/logo-dark.png"
-              alt="Apartment Cam Logo"
-              width={70}
-              height={70}
-            />
-          </div>
-          <div className="top-bar-text">
-            <div className="top-bar-title">{topBarTitle}</div>
-            <div className="top-bar-subtitle top-bar-subtitle--meta">
-              {siteConfig.siteSubtitle}
-            </div>
-            <div className="top-bar-subtitle top-bar-subtitle--location">
-              {locationTitle}
-            </div>
-          </div>
-        </div>
-        <div className="top-bar-right">
-          <div className="top-bar-time-stack">
-            <div className="top-bar-time-group">
-              <span className="meta-label">LOCAL</span>
-              <span className="meta-value meta-mono">
-                {clock || "----/--/-- --:--:--"}
-              </span>
-            </div>
-            <div className="top-bar-time-group">
-              <span className="meta-label">UTC</span>
-              <span className="meta-value meta-mono">
-                {utcClock || "----/--/-- --:--:--"}
-              </span>
-            </div>
-          </div>
-          <span className="flag-avatar" title={countryName || "Country"}>
-            {flagEmoji}
-          </span>
-        </div>
-      </header>
+      <ViewerHeader
+        topBarTitle={topBarTitle}
+        subtitle={locationTitle || siteConfig.siteSubtitle}
+      />
       {shareStatus && <div className="share-toast">{shareStatus}</div>}
 
       {/* Centered camera pane */}
@@ -1327,20 +1249,20 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
             }`}
           >
             <div className="stream-card__header">
-            <div>
-              <div className="stream-card__title">
-                {isMobile ? "Primary cam" : "Main stream"}
+              <div>
+                <div className="stream-card__title">
+                  {isMobile ? "Primary cam" : "Main stream"}
+                </div>
+                <div className="stream-card__subtitle">{locationDisplayValue}</div>
               </div>
-              <div className="stream-card__subtitle">{locationDisplayValue}</div>
+              <button
+                className="btn stream-card__toggle"
+                type="button"
+                onClick={toggleStreamCard}
+              >
+              {streamCardCollapsed ? "Open" : "Close"}
+              </button>
             </div>
-            <button
-              className="btn stream-card__toggle"
-              type="button"
-              onClick={toggleStreamCard}
-            >
-              {streamCardCollapsed ? "Show stream card" : "Hide stream card"}
-            </button>
-          </div>
           <div className="stream-card__body">
             <div
               className={`layout-grid${
@@ -1350,33 +1272,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
               <section
                 className={`cam-panel${isExpanded ? " cam-panel-expanded" : ""}`}
               >
-                <div
-                  className={`cam-frame-card${
-                    camCollapsed ? " cam-frame-card--collapsed" : ""
-                  }`}
-                >
-                  <div className="cam-frame-card__header">
-                    <div>
-                      <div className="cam-frame-card__title">Live Stream</div>
-                      <div
-                        className={`cam-frame-card__tag${
-                          hasError
-                            ? " cam-frame-card__tag--offline"
-                            : " cam-frame-card__tag--live"
-                        }`}
-                      >
-                        {hasError ? offlineStatusLabel : "LIVE"}
-                      </div>
-                    </div>
-                    <button
-                      className="btn cam-frame-card__toggle"
-                      type="button"
-                      onClick={toggleCamCollapse}
-                      aria-pressed={camCollapsed}
-                    >
-                      {camCollapsed ? "Show stream" : "Hide stream"}
-                    </button>
-                  </div>
+                <div className="cam-frame-card">
                   <div className="cam-frame-card__body">
                     <div
                       ref={camContainerRef}
@@ -1446,7 +1342,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                       }}
               >
                       <div className="cam-frame-inner" ref={camInnerRef}>
-                        {!hasError ? (
+                        {(!hasError || streamRecovering) && (
                           <video
                             ref={videoRef}
                             className="cam-video"
@@ -1461,7 +1357,8 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                             onCanPlay={handleStreamLoad}
                             onError={handleStreamError}
                           />
-                        ) : (
+                        )}
+                        {hasError && (
                           <div className="cam-offline">
                             <canvas
                               ref={tvCanvasRef}
@@ -1472,7 +1369,9 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                                 {offlineStatusLabel}
                               </span>
                               <div className="cam-offline-detail">
-                                {streamIssueDetail || "Stream unavailable"}
+                                {streamRecovering
+                                  ? "Reconnecting…"
+                                  : streamIssueDetail || "Stream unavailable"}
                               </div>
                               <button
                                 className="btn cam-offline-button"
@@ -1486,10 +1385,10 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                           </div>
                         )}
                       </div>
-                      {loadingStatus && !status && !hasError && (
+                      {((loadingStatus && !status && !hasError) || streamRecovering) && (
                         <div className="cam-loading">
                           <span className="loading-spinner" aria-hidden="true" />
-                          <span>Loading stream…</span>
+                          <span>Loading</span>
                         </div>
                       )}
                       {reticleActive && panLine && (
@@ -1509,7 +1408,10 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                           );
                         })()
                       )}
-                      {wheelZoomIndicator != null && !hasError && !loadingStatus && (
+                      {wheelZoomIndicator != null &&
+                        !hasError &&
+                        !loadingStatus &&
+                        !spinnerVisible && (
                         (() => {
                           const size = Math.max(30, 70 - wheelZoomIndicator * 40);
                           const offset = (100 - size) / 2;
@@ -1544,7 +1446,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                         </div>
                       )}
                       {/* Heading overlay */}
-                      {showHeadingOverlay && currentHeading != null && (
+                      {showHeadingOverlay && currentHeading != null && !spinnerVisible && (
                         <div className="heading-overlay">
                           <div className="heading-arc" />
                           {[-60, -30, 0, 30, 60].map((offset) => {
