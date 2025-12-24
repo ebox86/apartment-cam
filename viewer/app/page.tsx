@@ -1354,7 +1354,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                             <MediaProvider
                               mediaProps={{
                                 "aria-label": siteConfig.streamAltText,
-                                disablePictureInPicture: true,
                                 draggable: false,
                               }}
                             />
