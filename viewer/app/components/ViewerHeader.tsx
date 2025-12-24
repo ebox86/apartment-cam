@@ -1,3 +1,5 @@
+import Avatar from "./Avatar";
+
 type ViewerHeaderProps = {
   topBarTitle: string;
   subtitle: string;
@@ -42,7 +44,7 @@ export default function ViewerHeader({
             >
               publish
             </button>
-            <div className="hidden md:block">
+            <div className="hidden min-[901px]:block">
               <button
                 type="button"
                 disabled
@@ -54,17 +56,7 @@ export default function ViewerHeader({
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            disabled
-            className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[32px] text-slate-400 opacity-80 cursor-not-allowed"
-            aria-label="Viewer avatar (disabled)"
-            title="Viewer avatar (disabled)"
-          >
-            <span className="text-[32px]" aria-hidden="true">
-              👤
-            </span>
-          </button>
+          <Avatar radius={9999} />
         </div>
       </div>
     </header>

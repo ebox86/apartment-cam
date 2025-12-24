@@ -203,39 +203,62 @@ body {
     gap: 8px;
   }
   
-  .btn {
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: radial-gradient(circle at top, #252b37 0%, #11141d 60%);
-    color: var(--text);
-    font-size: 11px;
-    padding: 6px 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
+  @layer components {
+    .btn {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: radial-gradient(circle at top, #252b37 0%, #11141d 60%);
+      color: var(--text);
+      font-size: 11px;
+      padding: 6px 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
 
-  .viewer-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0;
-  }
-  
-  .viewer-header-title {
-    color: #facc15;
-  }
-  
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  
-  .btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(66, 245, 176, 0.3);
+    .btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(66, 245, 176, 0.3);
+    }
+
+    .btn:disabled {
+      border-color: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(255, 255, 255, 0.05);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .viewer-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+    
+    .viewer-header-title {
+      color: #facc15;
+    }
+
+    .avatar-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.05);
+      color: rgba(148, 163, 184, 0.9);
+      padding: 0;
+      line-height: 1;
+      cursor: not-allowed;
+      flex: 0 0 auto;
+    }
+
+    .avatar-icon {
+      width: 48%;
+      height: 48%;
+    }
   }
   
   /* Meta panel */
@@ -1230,35 +1253,6 @@ body {
   .meta-mono {
     font-family: Consolas, "SF Mono", Menlo, Monaco, "Ubuntu Mono",
       "Roboto Mono", monospace;
-  }
-  
-  /* button */
-  .btn {
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: radial-gradient(circle at top, #252b37 0%, #11141d 60%);
-    color: var(--text);
-    font-size: 11px;
-    padding: 6px 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  
-  .btn:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(66, 245, 176, 0.3);
-  }
-
-  .btn:disabled {
-    border-color: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.05);
-    cursor: not-allowed;
-    box-shadow: none;
   }
   
 .stats-panel {
