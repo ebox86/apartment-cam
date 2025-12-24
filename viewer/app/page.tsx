@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Hls from "hls.js";
+import {
+  MediaPlayer,
+  MediaProvider,
+  type MediaPlayerInstance,
+} from "@vidstack/react";
 import { siteConfig } from "../config/site-config";
 import ViewerHeader from "./components/ViewerHeader";
 
@@ -234,8 +238,7 @@ async function exitFullscreen() {
 export default function ApartmentCamPage() {
   const camContainerRef = useRef<HTMLDivElement | null>(null);
   const camInnerRef = useRef<HTMLDivElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const playerRef = useRef<MediaPlayerInstance | null>(null);
   const hideHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -966,10 +969,10 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       retryTimeoutRef.current = null;
     }
     setAutoRetryCount(0);
-    const video = videoRef.current;
-    if (video) {
-      video.muted = true;
-      void video.play().catch(() => {
+    const player = playerRef.current;
+    if (player) {
+      player.muted = true;
+      void player.play().catch(() => {
         /* Safari may reject autoplay; we only suppress errors */
       });
     }
@@ -1081,100 +1084,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     },
     [probeStreamEndpoint, scheduleStreamRetry, stopAutoRetry]
   );
-
-  useEffect(() => {
-    const video = videoRef.current;
-    const cleanupHls = () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-
-    if (!video || !streamUrl) {
-      cleanupHls();
-      return undefined;
-    }
-
-    const resetVideoSource = () => {
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-    };
-
-    if (hasError && !streamRecovering) {
-      cleanupHls();
-      resetVideoSource();
-      return undefined;
-    }
-
-    const attachNative = () => {
-      resetVideoSource();
-      video.src = streamUrl;
-      video.load();
-      void video.play().catch(() => {});
-    };
-
-    const attachHls = () => {
-      const hls = new Hls({
-        startFragPrefetch: true,
-        fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 1000,
-        fragLoadingMaxRetryTimeout: 60000,
-      });
-      hlsRef.current = hls;
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        const statusCode = data.response?.code;
-        if (
-          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
-          data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR &&
-          statusCode === 404
-        ) {
-          return;
-        }
-        const isOfflineStatus =
-          (statusCode === 404 && data.details !== Hls.ErrorDetails.FRAG_LOAD_ERROR) ||
-          statusCode === 410 ||
-          (statusCode != null && statusCode >= 500);
-
-        if (isOfflineStatus) {
-          cleanupHls();
-          handleStreamError({
-            statusCode,
-            detail: statusCode === 404 ? "Stream not available" : "Stream unavailable",
-            allowRetry: false,
-          });
-          return;
-        }
-
-        if (data.fatal) {
-          cleanupHls();
-          handleStreamError();
-        }
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        void video.play().catch(() => {});
-      });
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-    };
-
-    const usesNative =
-      video.canPlayType("application/vnd.apple.mpegurl") !== "";
-
-    if (Hls.isSupported() && !usesNative) {
-      cleanupHls();
-      attachHls();
-    } else {
-      cleanupHls();
-      attachNative();
-    }
-
-    return () => {
-      cleanupHls();
-      resetVideoSource();
-    };
-  }, [streamUrl, handleStreamError, streamRetryKey, hasError, streamRecovering]);
 
   useEffect(() => {
     if (!streamProbeTarget) return undefined;
@@ -1427,20 +1336,29 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
               >
                       <div className="cam-frame-inner" ref={camInnerRef}>
                         {(!hasError || streamRecovering) && (
-                          <video
-                            ref={videoRef}
-                            className="cam-video"
-                            aria-label={siteConfig.streamAltText}
-                            draggable={false}
+                          <MediaPlayer
+                            key={`${streamUrl}-${streamRetryKey}`}
+                            ref={playerRef}
+                            className="cam-media-player"
+                            title={siteConfig.streamAltText}
+                            src={streamUrl}
                             muted
                             autoPlay
                             playsInline
                             preload="metadata"
                             controls={false}
-                            disablePictureInPicture
+                            logLevel="silent"
                             onCanPlay={handleStreamLoad}
-                            onError={handleStreamError}
-                          />
+                            onError={() => handleStreamError()}
+                          >
+                            <MediaProvider
+                              mediaProps={{
+                                "aria-label": siteConfig.streamAltText,
+                                disablePictureInPicture: true,
+                                draggable: false,
+                              }}
+                            />
+                          </MediaPlayer>
                         )}
                       {hasError && !streamRecovering && (
                           <div className="cam-offline">
