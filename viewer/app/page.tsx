@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MediaPlayer,
   MediaProvider,
+  type MediaErrorDetail,
   type MediaPlayerInstance,
 } from "@vidstack/react";
 import { siteConfig } from "../config/site-config";
@@ -25,6 +26,9 @@ const VIEWER_HEARTBEAT_INTERVAL = 15000;
 const STREAM_RETRY_BASE_DELAY = 2000;
 const STREAM_RETRY_INCREMENT = 2000;
 const STREAM_RETRY_MAX_DELAY = 20000;
+const STREAM_RETRY_MAX_ATTEMPTS = 6;
+const STREAM_OFFLINE_RETRY_DELAY = 30000;
+const STREAM_BUFFERING_DELAY_MS = 600;
 
 const generateViewerId = () => {
   if (
@@ -243,7 +247,7 @@ export default function ApartmentCamPage() {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tvCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamProbeController = useRef<AbortController | null>(null);
+  const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aimBox, setAimBox] = useState<{ x: number; y: number } | null>(null);
   const [dragMoved, setDragMoved] = useState(false);
   const [panLine, setPanLine] = useState<{
@@ -300,7 +304,6 @@ export default function ApartmentCamPage() {
     [apiUrl]
   );
   const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
-  const streamProbeTarget = streamUrl;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -343,7 +346,9 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   const [streamRetryKey, setStreamRetryKey] = useState(0);
   const [autoRetryCount, setAutoRetryCount] = useState(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const offlineRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [streamRecovering, setStreamRecovering] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   const ViewerCountPill = ({ className }: { className?: string }) => (
     <div
@@ -376,6 +381,20 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     `btn zoom-control${
       zoomButtonActive === direction ? " zoom-control--active" : ""
     }`;
+
+  const getVideoElement = useCallback(() => {
+    const container = camInnerRef.current;
+    if (!container) return null;
+    const video = container.querySelector("video");
+    return video instanceof HTMLVideoElement ? video : null;
+  }, []);
+
+  const isVideoFullscreen = useCallback(() => {
+    const video = getVideoElement() as (HTMLVideoElement & {
+      webkitDisplayingFullscreen?: boolean;
+    }) | null;
+    return Boolean(video?.webkitDisplayingFullscreen);
+  }, [getVideoElement]);
 
   useEffect(() => {
     let active = true;
@@ -492,12 +511,14 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
         globalThis.clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      streamProbeController.current?.abort();
+      if (offlineRetryRef.current) {
+        globalThis.clearTimeout(offlineRetryRef.current);
+        offlineRetryRef.current = null;
+      }
+      if (bufferingTimerRef.current) {
+        globalThis.clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -510,7 +531,9 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   // fullscreen tracking
   useEffect(() => {
     const handleFsChange = () => {
-      setIsFullscreen(Boolean(getActiveFullscreenElement()));
+      setIsFullscreen(
+        Boolean(getActiveFullscreenElement()) || isVideoFullscreen()
+      );
     };
     FULLSCREEN_CHANGE_EVENTS.forEach((eventName) =>
       document.addEventListener(eventName, handleFsChange)
@@ -521,6 +544,20 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       );
     };
   }, []);
+
+  useEffect(() => {
+    const video = getVideoElement();
+    if (!video) return undefined;
+
+    const handleBegin = () => setIsFullscreen(true);
+    const handleEnd = () => setIsFullscreen(false);
+    video.addEventListener("webkitbeginfullscreen", handleBegin);
+    video.addEventListener("webkitendfullscreen", handleEnd);
+    return () => {
+      video.removeEventListener("webkitbeginfullscreen", handleBegin);
+      video.removeEventListener("webkitendfullscreen", handleEnd);
+    };
+  }, [getVideoElement, streamRetryKey, streamUrl]);
 
   // camera telemetry polling
   useEffect(() => {
@@ -650,10 +687,37 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   const handleFullscreen = async () => {
     try {
       const activeElement = getActiveFullscreenElement();
-      if (!activeElement && camContainerRef.current) {
-        await enterFullscreen(camContainerRef.current);
+      const video = getVideoElement();
+      if (!activeElement && !isVideoFullscreen() && camContainerRef.current) {
+        let didEnter = false;
+        try {
+          didEnter = await enterFullscreen(camContainerRef.current);
+        } catch {
+          didEnter = false;
+        }
+        if (!didEnter && video) {
+          const webkitEnterFullscreen = (
+            video as HTMLVideoElement & { webkitEnterFullscreen?: () => void }
+          ).webkitEnterFullscreen;
+          if (typeof webkitEnterFullscreen === "function") {
+            webkitEnterFullscreen.call(video);
+          }
+        }
       } else {
-        await exitFullscreen();
+        let didExit = false;
+        try {
+          didExit = await exitFullscreen();
+        } catch {
+          didExit = false;
+        }
+        if (!didExit && video) {
+          const webkitExitFullscreen = (
+            video as HTMLVideoElement & { webkitExitFullscreen?: () => void }
+          ).webkitExitFullscreen;
+          if (typeof webkitExitFullscreen === "function") {
+            webkitExitFullscreen.call(video);
+          }
+        }
       }
     } catch (err) {
       console.error("Fullscreen error", err);
@@ -675,7 +739,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   const zoomAtExtremeOut =
     caps && caps.minZoom != null ? currentZoom <= caps.minZoom : false;
   const spinnerVisible =
-    (loadingStatus && !status && !hasError) || streamRecovering;
+    (loadingStatus && !status && !hasError) || streamRecovering || isBuffering;
   const reticleActive =
     showReticle &&
     !hasError &&
@@ -956,14 +1020,35 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     };
   }, [hasError, streamRecovering, streamUrl]);
 
+  const clearOfflineRetry = useCallback(() => {
+    if (offlineRetryRef.current) {
+      globalThis.clearTimeout(offlineRetryRef.current);
+      offlineRetryRef.current = null;
+    }
+  }, []);
+
+  const clearBufferingTimer = useCallback(() => {
+    if (bufferingTimerRef.current) {
+      globalThis.clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
+  }, []);
+
+  const startBufferingTimer = useCallback(() => {
+    if (bufferingTimerRef.current) return;
+    bufferingTimerRef.current = globalThis.setTimeout(() => {
+      bufferingTimerRef.current = null;
+      setIsBuffering(true);
+    }, STREAM_BUFFERING_DELAY_MS);
+  }, []);
+
   const handleStreamLoad = () => {
+    clearOfflineRetry();
+    clearBufferingTimer();
     setHasError(false);
     setStreamRecovering(false);
     setStreamIssueDetail(null);
-    if (streamProbeController.current) {
-      streamProbeController.current.abort();
-      streamProbeController.current = null;
-    }
+    setIsBuffering(false);
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
@@ -978,51 +1063,8 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     }
   };
   
-  const probeStreamEndpoint = useCallback(async () => {
-    if (!streamProbeTarget) return true;
-    streamProbeController.current?.abort();
-    const controller = new AbortController();
-    streamProbeController.current = controller;
-
-    const markOffline = (detail?: string) => {
-      setStreamIssueDetail(detail ?? null);
-      return false;
-    };
-
-    try {
-      const res = await fetch(streamProbeTarget, {
-        method: "GET",
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return true;
-
-      if (res.status === 404) {
-        res.body?.cancel?.();
-        return markOffline("Stream not available");
-      }
-
-      if (!res.ok) {
-        res.body?.cancel?.();
-        return markOffline();
-      }
-
-      res.body?.cancel?.();
-      return true;
-    } catch (err) {
-      if (controller.signal.aborted) return true;
-      return markOffline();
-    } finally {
-      if (streamProbeController.current === controller) {
-        streamProbeController.current = null;
-      }
-    }
-  }, [streamProbeTarget]);
-  
   const scheduleStreamRetry = useCallback(() => {
-    if (retryTimeoutRef.current) {
-      globalThis.clearTimeout(retryTimeoutRef.current);
-    }
+    if (retryTimeoutRef.current) return;
     setStreamRecovering(true);
     setAutoRetryCount((count) => {
       const next = count + 1;
@@ -1037,79 +1079,90 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     });
   }, []);
 
+  const scheduleOfflineRetry = useCallback(() => {
+    if (offlineRetryRef.current) return;
+    offlineRetryRef.current = globalThis.setTimeout(() => {
+      offlineRetryRef.current = null;
+      setAutoRetryCount(0);
+      setStreamRecovering(true);
+      setStreamRetryKey((key) => key + 1);
+    }, STREAM_OFFLINE_RETRY_DELAY);
+  }, []);
+
   const stopAutoRetry = useCallback(() => {
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
+    clearOfflineRetry();
+    clearBufferingTimer();
+    setIsBuffering(false);
     setStreamRecovering(false);
-    setAutoRetryCount(0);
-  }, []);
+  }, [clearBufferingTimer, clearOfflineRetry]);
+
+  const markStreamOffline = useCallback(
+    (detail?: string, allowRetry = true) => {
+      clearBufferingTimer();
+      setIsBuffering(false);
+      setHasError(true);
+      if (detail) {
+        setStreamIssueDetail(detail);
+      }
+      if (!allowRetry) {
+        stopAutoRetry();
+        return;
+      }
+      if (autoRetryCount + 1 > STREAM_RETRY_MAX_ATTEMPTS) {
+        stopAutoRetry();
+        scheduleOfflineRetry();
+        return;
+      }
+      scheduleStreamRetry();
+    },
+    [
+      autoRetryCount,
+      clearBufferingTimer,
+      scheduleOfflineRetry,
+      scheduleStreamRetry,
+      stopAutoRetry,
+    ]
+  );
 
   const retryStream = useCallback(() => {
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
+    clearOfflineRetry();
+    clearBufferingTimer();
     setAutoRetryCount(0);
     setStreamRecovering(true);
     setHasError(false);
+    setStreamIssueDetail(null);
+    setIsBuffering(false);
     setStreamRetryKey((key) => key + 1);
-  }, []);
+  }, [clearBufferingTimer, clearOfflineRetry]);
 
   const handleStreamError = useCallback(
-    (info?: { statusCode?: number; detail?: string; allowRetry?: boolean }) => {
-      setHasError(true);
-      if (info?.detail) {
-        setStreamIssueDetail(info.detail);
-      }
-
-      const statusCode = info?.statusCode;
-      const isOfflineStatus =
-        statusCode === 404 ||
-        statusCode === 410 ||
-        (statusCode != null && statusCode >= 500);
-
-      if (info?.allowRetry === false || isOfflineStatus) {
-        stopAutoRetry();
+    (detail?: MediaErrorDetail) => {
+      if (hasError || detail?.code === 1) return;
+      const message = detail?.message;
+      if (detail?.code === 4) {
+        markStreamOffline(message || "Stream unavailable", false);
         return;
       }
-
-      scheduleStreamRetry();
-      void probeStreamEndpoint().then((online) => {
-        if (!online) {
-          stopAutoRetry();
-        }
-      });
+      startBufferingTimer();
+      if (message) {
+        setStreamIssueDetail(message);
+      }
     },
-    [probeStreamEndpoint, scheduleStreamRetry, stopAutoRetry]
+    [hasError, markStreamOffline, startBufferingTimer]
   );
 
-  useEffect(() => {
-    if (!streamProbeTarget) return undefined;
-    let active = true;
-
-    const checkStream = async () => {
-      const online = await probeStreamEndpoint();
-      if (!active) return;
-      if (online) {
-        setStreamIssueDetail(null);
-      } else {
-        stopAutoRetry();
-      }
-      setHasError(!online);
-    };
-
-    void checkStream();
-    const intervalId = globalThis.setInterval(() => {
-      void checkStream();
-    }, 15000);
-
-    return () => {
-      active = false;
-      globalThis.clearInterval(intervalId);
-    };
-  }, [streamProbeTarget, probeStreamEndpoint, stopAutoRetry]);
+  const handleStreamWaiting = useCallback(() => {
+    if (hasError) return;
+    startBufferingTimer();
+  }, [hasError, startBufferingTimer]);
 
   const handleClickPanZoom = (clientX: number, clientY: number) => {
     if (!camContainerRef.current) return;
@@ -1349,7 +1402,11 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                             controls={false}
                             logLevel="silent"
                             onCanPlay={handleStreamLoad}
-                            onError={() => handleStreamError()}
+                            onLoadedData={handleStreamLoad}
+                            onPlaying={handleStreamLoad}
+                            onWaiting={handleStreamWaiting}
+                            onStalled={handleStreamWaiting}
+                            onError={(detail) => handleStreamError(detail)}
                           >
                             <MediaProvider
                               mediaProps={{
