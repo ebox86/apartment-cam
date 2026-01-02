@@ -7,6 +7,10 @@ services:
     ports:
       - "3001:3000"
     restart: unless-stopped
+    networks:
+      cam-net:
+        aliases:
+          - cam-proxy
 
   go2rtc:
     image: alexxit/go2rtc:1.9.13
@@ -32,6 +36,10 @@ services:
       - >
         export AXIS_HOST=$(echo "${CAMERA_HOST}" | sed -E 's~https?://~~' | sed -E 's~/$~~');
         exec go2rtc -config /config/go2rtc.yaml
+    networks:
+      cam-net:
+        aliases:
+          - go2rtc
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -40,6 +48,7 @@ services:
       - .env
     depends_on:
       - go2rtc
+      - cam-proxy
     dns:
       - 1.1.1.1
       - 1.0.0.1
@@ -63,3 +72,9 @@ services:
       - /etc/cloudflared/tunnel.json
       - run
       - ${TUNNEL_NAME}
+    networks:
+      - cam-net
+
+networks:
+  cam-net:
+    name: apartment-cam-net
