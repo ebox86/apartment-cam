@@ -1538,9 +1538,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                               mediaProps={{
                                 "aria-label": siteConfig.streamAltText,
                                 draggable: false,
-                                autoPlay: true,
-                                muted: true,
-                                playsInline: true,
                               }}
                             />
                           </MediaPlayer>

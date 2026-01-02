@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   if (contentType.includes("mpegurl") || target.pathname.endsWith(".m3u8")) {
     const origin = new URL(STREAM_SOURCE).origin;
     const text = await response.text();
-    const rewritten = text.replaceAll(origin, request.nextUrl.origin);
+    const rewritten = text.split(origin).join(request.nextUrl.origin);
     responseHeaders.delete("content-length");
     return new NextResponse(rewritten, {
       status: response.status,

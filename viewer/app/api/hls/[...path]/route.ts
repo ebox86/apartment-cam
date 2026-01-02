@@ -59,7 +59,7 @@ async function proxy(
   const contentType = responseHeaders.get("content-type") || "";
   if (contentType.includes("mpegurl") || upstreamUrl.pathname.endsWith(".m3u8")) {
     const text = await response.text();
-    const rewritten = text.replaceAll(origin, request.nextUrl.origin);
+    const rewritten = text.split(origin).join(request.nextUrl.origin);
     responseHeaders.delete("content-length");
     return new NextResponse(rewritten, {
       status: response.status,
