@@ -151,6 +151,24 @@ body {
     letter-spacing: 0.26em;
     font-size: 13px;
     color: #ffd400;
+    z-index: 2;
+  }
+
+  .cam-tap-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 6, 8, 0.45);
+    z-index: 3;
+  }
+
+  .cam-tap-button {
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 8px 16px;
   }
 
   .loading-spinner {

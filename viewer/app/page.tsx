@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MediaPlayer,
   MediaProvider,
+  isHLSProvider,
+  useMediaRemote,
   type MediaErrorDetail,
   type MediaPlayerInstance,
+  type MediaProviderAdapter,
 } from "@vidstack/react";
 import { siteConfig } from "../config/site-config";
 import ViewerHeader from "./components/ViewerHeader";
@@ -16,13 +19,20 @@ const DEFAULT_API_BASE = INTERNAL_PROXY_BASE;
 const DEFAULT_STREAM_URL = LOCALHOST
   ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
   : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
+const PUBLIC_STREAM_URL =
+  process.env.NEXT_PUBLIC_STREAM_URL ||
+  process.env.STREAM_URL ||
+  DEFAULT_STREAM_URL;
 const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 const ZOOM_HOLD_STEP = 24;
 const ZOOM_HOLD_INTERVAL = 90;
+const WHEEL_ZOOM_COMMIT_DELAY = 220;
 const STREAM_STORAGE_KEY = "apartment-cam-stream-url";
 const VIEWER_ID_KEY = "apartment-cam-viewer-id";
-const VIEWER_HEARTBEAT_INTERVAL = 15000;
+const TELEMETRY_RETRY_BASE_DELAY = 2000;
+const TELEMETRY_RETRY_MAX_DELAY = 20000;
+const TELEMETRY_RETRY_MAX_ATTEMPTS = 6;
 const STREAM_RETRY_BASE_DELAY = 2000;
 const STREAM_RETRY_INCREMENT = 2000;
 const STREAM_RETRY_MAX_DELAY = 20000;
@@ -43,6 +53,16 @@ const generateViewerId = () => {
 function parseCameraId(value?: string | number | null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : DEFAULT_CAMERA_ID;
+}
+
+function toInternalStreamUrl(value: string) {
+  if (!value) return value;
+  try {
+    const parsed = new URL(value);
+    return `/api/stream${parsed.search}`;
+  } catch {
+    return value;
+  }
 }
 
 type StatusResponse = {
@@ -243,6 +263,7 @@ export default function ApartmentCamPage() {
   const camContainerRef = useRef<HTMLDivElement | null>(null);
   const camInnerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<MediaPlayerInstance | null>(null);
+  const mediaRemote = useMediaRemote(playerRef);
   const hideHudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const zoomHoldRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -257,6 +278,7 @@ export default function ApartmentCamPage() {
     endY: number;
   } | null>(null);
   const wheelIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wheelZoomCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [wheelZoomIndicator, setWheelZoomIndicator] = useState<number | null>(
     null
   );
@@ -264,48 +286,67 @@ export default function ApartmentCamPage() {
     process.env.NEXT_PUBLIC_PROXY_BASE ||
     process.env.PROXY_BASE ||
     DEFAULT_API_BASE;
+  const directApiBase = process.env.NEXT_PUBLIC_PROXY_BASE || "";
   const initialCameraId = parseCameraId(
     process.env.NEXT_PUBLIC_CAMERA_ID || process.env.CAMERA_ID
   );
   const initialStreamUrl =
-    process.env.NEXT_PUBLIC_STREAM_URL ||
-    process.env.STREAM_URL ||
-    DEFAULT_STREAM_URL;
+    toInternalStreamUrl(
+      process.env.NEXT_PUBLIC_STREAM_URL ||
+        process.env.STREAM_URL ||
+        DEFAULT_STREAM_URL
+    );
   const [config, setConfig] = useState<AppConfig>({
     apiBase: initialApiBase,
     cameraId: initialCameraId,
     streamUrl: initialStreamUrl,
   });
   const cameraId = config.cameraId;
-  const apiUrl = (path: string) => `${config.apiBase}${path}`;
-  const sendViewerHeartbeat = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(apiUrl("/api/viewers/heartbeat"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id }),
-        });
-        if (!res.ok) {
-          setViewerCount(null);
-          return null;
-        }
-        const payload = (await res.json()) as { count?: number };
-        if (typeof payload.count === "number") {
-          setViewerCount(payload.count);
-          return payload.count;
-        }
-        setViewerCount(null);
-      } catch {
-        setViewerCount(null);
-      }
-      return null;
-    },
-    [apiUrl]
+  const [useDirectApi, setUseDirectApi] = useState(false);
+  const [apiFailureCount, setApiFailureCount] = useState(0);
+  const apiBase = useMemo(
+    () => (useDirectApi && directApiBase ? directApiBase : config.apiBase),
+    [useDirectApi, directApiBase, config.apiBase]
   );
-  const streamUrl = config.streamUrl || DEFAULT_STREAM_URL;
+  const apiUrl = useCallback((path: string) => `${apiBase}${path}`, [apiBase]);
+  const recordApiSuccess = useCallback(() => {
+    setApiFailureCount(0);
+  }, []);
+  const recordApiFailure = useCallback(
+    (status?: number) => {
+      setApiFailureCount((count) => {
+        const next = count + 1;
+        if (
+          !useDirectApi &&
+          directApiBase &&
+          (status == null || status >= 500) &&
+          next >= 2
+        ) {
+          setUseDirectApi(true);
+        }
+        return next;
+      });
+    },
+    [directApiBase, useDirectApi]
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const directStreamUrl = useMemo(() => {
+    const candidate = config.streamUrl || "";
+    if (/^https?:\/\//.test(candidate)) {
+      return candidate;
+    }
+    return PUBLIC_STREAM_URL;
+  }, [config.streamUrl]);
+  const streamUrl = useMemo(
+    () => toInternalStreamUrl(config.streamUrl || directStreamUrl || DEFAULT_STREAM_URL),
+    [config.streamUrl, directStreamUrl]
+  );
+  const playerSrc = useMemo(
+    () => ({ src: streamUrl, type: "application/x-mpegurl" as const }),
+    [streamUrl]
+  );
   const [hasError, setHasError] = useState(false);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [caps, setCaps] = useState<PtzCaps | null>(null);
@@ -349,6 +390,17 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   const offlineRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [streamRecovering, setStreamRecovering] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [needsUserPlay, setNeedsUserPlay] = useState(false);
+  const handleProviderChange = useCallback(
+    (provider: MediaProviderAdapter | null) => {
+      if (!provider || !isHLSProvider(provider)) return;
+      provider.config = {
+        ...provider.config,
+        preferManagedMediaSource: false,
+      };
+    },
+    []
+  );
 
   const ViewerCountPill = ({ className }: { className?: string }) => (
     <div
@@ -457,21 +509,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   }, []);
 
   useEffect(() => {
-    if (!viewerId) return undefined;
-    let active = true;
-    const send = () => {
-      if (!active) return;
-      void sendViewerHeartbeat(viewerId);
-    };
-    send();
-    const intervalId = globalThis.setInterval(send, VIEWER_HEARTBEAT_INTERVAL);
-    return () => {
-      active = false;
-      globalThis.clearInterval(intervalId);
-    };
-  }, [viewerId, sendViewerHeartbeat]);
-
-  useEffect(() => {
     if (!shareStatus) return;
     const id = globalThis.setTimeout(() => setShareStatus(null), 2200);
     return () => {
@@ -497,10 +534,23 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ua = navigator.userAgent || "";
+    const iOSDevice =
+      /iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    setIsIOS(iOSDevice);
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (wheelIndicatorTimer.current) {
         globalThis.clearTimeout(wheelIndicatorTimer.current);
         wheelIndicatorTimer.current = null;
+      }
+      if (wheelZoomCommitTimer.current) {
+        globalThis.clearTimeout(wheelZoomCommitTimer.current);
+        wheelZoomCommitTimer.current = null;
       }
     };
   }, []);
@@ -559,53 +609,105 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     };
   }, [getVideoElement, streamRetryKey, streamUrl]);
 
-  // camera telemetry polling
+  // camera telemetry stream (SSE)
   useEffect(() => {
-    let mounted = true;
+    if (typeof window === "undefined") return;
+    if (!viewerId) return;
 
-    const fetchStatus = async () => {
-      if (hasError) {
-        if (mounted) setLoadingStatus(false);
-        return;
-      }
-      try {
-        setLoadingStatus(true);
-        const res = await fetch(apiUrl("/api/status"), { cache: "no-store" });
-        if (!res.ok) {
-          if (mounted) {
-            const baseHint =
-              config.apiBase === INTERNAL_PROXY_BASE
-                ? "Start cam-proxy on http://localhost:3001 or set NEXT_PUBLIC_PROXY_BASE."
-                : `Check api base: ${config.apiBase}.`;
-            const message =
-              res.status === 404
-                ? `Status API not found. ${baseHint}`
-                : res.status >= 500
-                ? `Status API unavailable (${res.status}).`
-                : `Status API error (${res.status}).`;
-            setApiError(message);
-          }
-          return;
-        }
-        const data = (await res.json()) as StatusResponse;
-        if (mounted) {
-          setStatus(data);
-          setApiError(null);
-        }
-      } catch (err) {
-        if (mounted) {
-          const message = err instanceof Error ? err.message : "Unknown error";
-          const friendly =
-            message === "Failed to fetch"
-              ? "Unable to reach status API. Check cam-proxy or NEXT_PUBLIC_PROXY_BASE."
-              : message;
-          setApiError(friendly);
-        }
-      } finally {
-        if (mounted) setLoadingStatus(false);
+    let eventSource: EventSource | null = null;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    let closed = false;
+
+    const stopRetry = () => {
+      if (retryTimeout) {
+        globalThis.clearTimeout(retryTimeout);
+        retryTimeout = null;
       }
     };
 
+    const connect = () => {
+      if (closed) return;
+      stopRetry();
+      setLoadingStatus(true);
+
+      const base = apiUrl("/api/telemetry/stream");
+      const streamUrl = new URL(base, window.location.href);
+      streamUrl.searchParams.set("id", viewerId);
+      eventSource = new EventSource(streamUrl.toString());
+
+      eventSource.addEventListener("connected", () => {
+        setApiError(null);
+        recordApiSuccess();
+      });
+
+      eventSource.addEventListener("status", (event) => {
+        try {
+          const payload = JSON.parse(event.data) as StatusResponse;
+          setStatus(payload);
+          setApiError(null);
+          setLoadingStatus(false);
+          recordApiSuccess();
+        } catch {
+          // ignore malformed payloads
+        }
+      });
+
+      eventSource.addEventListener("status-error", (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { error?: string };
+          setApiError(payload.error || "Status stream error.");
+        } catch {
+          setApiError("Status stream error.");
+        }
+        setLoadingStatus(false);
+        recordApiFailure();
+      });
+
+      eventSource.addEventListener("viewers", (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { count?: number };
+          setViewerCount(
+            typeof payload.count === "number" ? payload.count : null
+          );
+        } catch {
+          setViewerCount(null);
+        }
+      });
+
+      eventSource.onerror = () => {
+        recordApiFailure();
+        setApiError(
+          "Telemetry stream disconnected. Waiting to reconnect..."
+        );
+        setViewerCount(null);
+        setLoadingStatus(false);
+        if (eventSource?.readyState === EventSource.CLOSED) {
+          if (retryCount >= TELEMETRY_RETRY_MAX_ATTEMPTS) return;
+          const delay = Math.min(
+            TELEMETRY_RETRY_MAX_DELAY,
+            TELEMETRY_RETRY_BASE_DELAY * 2 ** retryCount
+          );
+          retryCount += 1;
+          retryTimeout = globalThis.setTimeout(connect, delay);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      stopRetry();
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [apiUrl, recordApiFailure, recordApiSuccess, viewerId]);
+
+  // camera capabilities (one-shot)
+  useEffect(() => {
+    let mounted = true;
     const fetchCaps = async () => {
       try {
         const res = await fetch(apiUrl("/api/ptz/capabilities"), {
@@ -619,15 +721,11 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
       }
     };
 
-    fetchStatus();
     fetchCaps();
-
-    const statusId = setInterval(fetchStatus, 20000);
     return () => {
       mounted = false;
-      clearInterval(statusId);
     };
-  }, [config.apiBase, hasError]);
+  }, [apiUrl]);
 
   // weather fetch (OpenWeather)
   useEffect(() => {
@@ -877,7 +975,13 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
         setWheelZoomIndicator(null);
         wheelIndicatorTimer.current = null;
       }, 800);
-      applyZoom(next);
+      if (wheelZoomCommitTimer.current) {
+        globalThis.clearTimeout(wheelZoomCommitTimer.current);
+      }
+      wheelZoomCommitTimer.current = globalThis.setTimeout(() => {
+        wheelZoomCommitTimer.current = null;
+        applyZoom(next);
+      }, WHEEL_ZOOM_COMMIT_DELAY);
     },
     [
       hasError,
@@ -1049,6 +1153,7 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     setStreamRecovering(false);
     setStreamIssueDetail(null);
     setIsBuffering(false);
+    setNeedsUserPlay(false);
     if (retryTimeoutRef.current) {
       globalThis.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
@@ -1057,11 +1162,29 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     const player = playerRef.current;
     if (player) {
       player.muted = true;
-      void player.play().catch(() => {
-        /* Safari may reject autoplay; we only suppress errors */
-      });
+      if (player.paused) {
+        void player.play().catch(() => {
+          if (isIOS) {
+            setNeedsUserPlay(true);
+          }
+        });
+      }
     }
   };
+
+  const handleAutoPlayFail = useCallback(() => {
+    if (!isIOS) return;
+    setNeedsUserPlay(true);
+  }, [isIOS]);
+
+  const handleTapToPlay = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      setNeedsUserPlay(false);
+      mediaRemote.setTarget(event.currentTarget);
+      mediaRemote.play(event.nativeEvent);
+    },
+    [mediaRemote]
+  );
   
   const scheduleStreamRetry = useCallback(() => {
     if (retryTimeoutRef.current) return;
@@ -1394,13 +1517,16 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                             ref={playerRef}
                             className="cam-media-player"
                             title={siteConfig.streamAltText}
-                            src={streamUrl}
+                            src={playerSrc}
                             muted
                             autoPlay
                             playsInline
+                            preferNativeHLS={isIOS}
                             preload="metadata"
                             controls={false}
                             logLevel="silent"
+                            onProviderChange={handleProviderChange}
+                            onAutoPlayFail={handleAutoPlayFail}
                             onCanPlay={handleStreamLoad}
                             onLoadedData={handleStreamLoad}
                             onPlaying={handleStreamLoad}
@@ -1412,6 +1538,9 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                               mediaProps={{
                                 "aria-label": siteConfig.streamAltText,
                                 draggable: false,
+                                autoPlay: true,
+                                muted: true,
+                                playsInline: true,
                               }}
                             />
                           </MediaPlayer>
@@ -1447,6 +1576,17 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
                         <div className="cam-loading">
                           <span className="loading-spinner" aria-hidden="true" />
                           <span>Loading</span>
+                        </div>
+                      )}
+                      {needsUserPlay && !hasError && !spinnerVisible && (
+                        <div className="cam-tap-overlay">
+                          <button
+                            className="btn cam-tap-button"
+                            type="button"
+                            onClick={handleTapToPlay}
+                          >
+                            Tap to play
+                          </button>
                         </div>
                       )}
                       {reticleActive && panLine && (

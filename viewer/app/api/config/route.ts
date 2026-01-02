@@ -18,11 +18,21 @@ export async function GET() {
     process.env.STREAM_URL ||
     (apiBase ? `${apiBase}/stream` : "");
 
+  const toInternalStreamUrl = (value: string) => {
+    if (!value) return value;
+    try {
+      const parsed = new URL(value);
+      return `/api/stream${parsed.search}`;
+    } catch {
+      return value;
+    }
+  };
+
   const cameraId = Number(cameraIdRaw);
 
   return NextResponse.json({
     apiBase,
     cameraId: Number.isFinite(cameraId) ? cameraId : 1,
-    streamUrl,
+    streamUrl: toInternalStreamUrl(streamUrl),
   });
 }

@@ -30,6 +30,8 @@ async function proxy(
   const upstreamUrl = buildTargetUrl(resolvedParams?.path, request.nextUrl.search);
   const headers = new Headers(request.headers);
   headers.delete("host");
+  headers.delete("accept-encoding");
+  headers.set("accept-encoding", "identity");
   headers.set("x-forwarded-host", request.headers.get("host") || "");
   headers.set("x-forwarded-proto", request.headers.get("x-forwarded-proto") || "https");
 
@@ -45,6 +47,8 @@ async function proxy(
   });
 
   const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete("content-encoding");
+  responseHeaders.delete("content-length");
   return new NextResponse(response.body, {
     status: response.status,
     headers: responseHeaders,

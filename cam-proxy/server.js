@@ -559,6 +559,17 @@ const capsCache = {
 
 const VIEWER_HEARTBEAT_TTL_MS = 65 * 1000;
 const viewerHeartbeats = new Map();
+const TELEMETRY_PUSH_INTERVAL_MS = Number(
+  process.env.TELEMETRY_PUSH_INTERVAL_MS || 20000
+);
+const VIEWER_STREAM_PING_MS = Number(
+  process.env.VIEWER_STREAM_PING_MS || 15000
+);
+
+function sendSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
 
 function cleanupViewerHeartbeats() {
   const threshold = Date.now() - VIEWER_HEARTBEAT_TTL_MS;
@@ -579,6 +590,54 @@ function getViewerCount() {
   cleanupViewerHeartbeats();
   return viewerHeartbeats.size;
 }
+
+app.get("/api/telemetry/stream", async (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  if (typeof res.flushHeaders === "function") {
+    res.flushHeaders();
+  }
+
+  const viewerId = typeof req.query?.id === "string" ? req.query.id : null;
+  if (viewerId) {
+    recordViewerHeartbeat(viewerId);
+  }
+
+  const sendViewerCount = () => {
+    if (viewerId) {
+      recordViewerHeartbeat(viewerId);
+    }
+    sendSse(res, "viewers", { count: getViewerCount() });
+  };
+
+  const sendStatus = async () => {
+    try {
+      const payload = await getCachedStatusPayload();
+      sendSse(res, "status", payload);
+    } catch (err) {
+      sendSse(res, "status-error", {
+        error: err instanceof Error ? err.message : "Failed to fetch status",
+      });
+    }
+  };
+
+  sendSse(res, "connected", { ok: true });
+  void sendStatus();
+  sendViewerCount();
+
+  const heartbeatId = setInterval(sendViewerCount, VIEWER_STREAM_PING_MS);
+  const statusId = setInterval(sendStatus, TELEMETRY_PUSH_INTERVAL_MS);
+
+  req.on("close", () => {
+    clearInterval(heartbeatId);
+    clearInterval(statusId);
+    res.end();
+  });
+});
 
 async function buildStatusPayload() {
   const [optics, geolocation, time, device, temperature] = await Promise.all([

@@ -40,6 +40,9 @@ services:
       - .env
     depends_on:
       - go2rtc
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     volumes:
       - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
       - ${TUNNEL_CREDENTIALS_FILE:-./cloudflared/tunnel.json}:/etc/cloudflared/tunnel.json:ro
@@ -54,6 +57,8 @@ services:
       - --config
       - /etc/cloudflared/config.yml
       - --no-autoupdate
+      - --protocol
+      - http2
       - --credentials-file
       - /etc/cloudflared/tunnel.json
       - run
