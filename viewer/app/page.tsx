@@ -13,22 +13,14 @@ import {
 import { siteConfig } from "../config/site-config";
 import ViewerHeader from "./components/ViewerHeader";
 
-const LOCALHOST = process.env.NODE_ENV === "development";
-const INTERNAL_PROXY_BASE = "/api/cam-proxy";
-const DEFAULT_API_BASE = INTERNAL_PROXY_BASE;
-const DEFAULT_STREAM_URL = LOCALHOST
-  ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
-  : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
-const PUBLIC_STREAM_URL =
-  process.env.NEXT_PUBLIC_STREAM_URL ||
-  process.env.STREAM_URL ||
-  DEFAULT_STREAM_URL;
+const DEFAULT_API_BASE = "https://cam-api.ebox86.com";
+const DEFAULT_STREAM_URL =
+  "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
 const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 const ZOOM_HOLD_STEP = 24;
 const ZOOM_HOLD_INTERVAL = 90;
 const WHEEL_ZOOM_COMMIT_DELAY = 220;
-const STREAM_STORAGE_KEY = "apartment-cam-stream-url";
 const VIEWER_ID_KEY = "apartment-cam-viewer-id";
 const TELEMETRY_RETRY_BASE_DELAY = 2000;
 const TELEMETRY_RETRY_MAX_DELAY = 20000;
@@ -50,19 +42,8 @@ const generateViewerId = () => {
   return `viewer-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 };
 
-function parseCameraId(value?: string | number | null) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : DEFAULT_CAMERA_ID;
-}
-
-function toInternalStreamUrl(value: string) {
-  if (!value) return value;
-  try {
-    const parsed = new URL(value);
-    return `/api/stream${parsed.search}`;
-  } catch {
-    return value;
-  }
+function normalizeStreamUrl(value: string) {
+  return value;
 }
 
 type StatusResponse = {
@@ -282,21 +263,11 @@ export default function ApartmentCamPage() {
   const [wheelZoomIndicator, setWheelZoomIndicator] = useState<number | null>(
     null
   );
-  const initialApiBase =
-    process.env.NEXT_PUBLIC_PROXY_BASE ||
-    process.env.PROXY_BASE ||
-    DEFAULT_API_BASE;
-  const directApiBase = process.env.NEXT_PUBLIC_PROXY_BASE || "";
-  const initialCameraId = parseCameraId(
-    process.env.NEXT_PUBLIC_CAMERA_ID || process.env.CAMERA_ID
-  );
-  const initialStreamUrl =
-    toInternalStreamUrl(
-      process.env.NEXT_PUBLIC_STREAM_URL ||
-        process.env.STREAM_URL ||
-        DEFAULT_STREAM_URL
-    );
-  const [config, setConfig] = useState<AppConfig>({
+  const initialApiBase = DEFAULT_API_BASE;
+  const directApiBase = DEFAULT_API_BASE;
+  const initialCameraId = DEFAULT_CAMERA_ID;
+  const initialStreamUrl = normalizeStreamUrl(DEFAULT_STREAM_URL);
+  const [config] = useState<AppConfig>({
     apiBase: initialApiBase,
     cameraId: initialCameraId,
     streamUrl: initialStreamUrl,
@@ -332,16 +303,9 @@ export default function ApartmentCamPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const directStreamUrl = useMemo(() => {
-    const candidate = config.streamUrl || "";
-    if (/^https?:\/\//.test(candidate)) {
-      return candidate;
-    }
-    return PUBLIC_STREAM_URL;
-  }, [config.streamUrl]);
   const streamUrl = useMemo(
-    () => toInternalStreamUrl(config.streamUrl || directStreamUrl || DEFAULT_STREAM_URL),
-    [config.streamUrl, directStreamUrl]
+    () => normalizeStreamUrl(config.streamUrl || DEFAULT_STREAM_URL),
+    [config.streamUrl]
   );
   const playerSrc = useMemo(
     () => ({ src: streamUrl, type: "application/x-mpegurl" as const }),
@@ -447,50 +411,6 @@ const [zoomButtonActive, setZoomButtonActive] = useState<"in" | "out" | null>(
     }) | null;
     return Boolean(video?.webkitDisplayingFullscreen);
   }, [getVideoElement]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadConfig = async () => {
-      try {
-        const res = await fetch("/api/config");
-        if (!res.ok) throw new Error(`Config HTTP ${res.status}`);
-        const payload = (await res.json()) as Partial<AppConfig>;
-        if (!active) return;
-        setConfig((prev) => {
-          const nextCameraId =
-            payload.cameraId != null ? parseCameraId(payload.cameraId) : prev.cameraId;
-          return {
-            apiBase: payload.apiBase || prev.apiBase,
-            cameraId: nextCameraId,
-            streamUrl: payload.streamUrl || prev.streamUrl,
-          };
-        });
-      } catch (err) {
-        console.error("Failed to load runtime config", err);
-      }
-    };
-
-    loadConfig();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(STREAM_STORAGE_KEY);
-    if (stored) {
-      setConfig((prev) => ({ ...prev, streamUrl: stored }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (config.streamUrl) {
-      window.localStorage.setItem(STREAM_STORAGE_KEY, config.streamUrl);
-    }
-  }, [config.streamUrl]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

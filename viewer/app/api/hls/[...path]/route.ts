@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const LOCALHOST = process.env.NODE_ENV === "development";
-const DEFAULT_STREAM_URL = LOCALHOST
-  ? "http://localhost:1984/api/stream.m3u8?src=axis&mp4"
-  : "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
-const STREAM_SOURCE =
-  process.env.STREAM_URL ||
-  process.env.NEXT_PUBLIC_STREAM_URL ||
-  DEFAULT_STREAM_URL;
+const STREAM_SOURCE = "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
 
 function buildStreamOrigin() {
   if (!STREAM_SOURCE) return null;

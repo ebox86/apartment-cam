@@ -41,6 +41,7 @@ const PTZ_MIN_ZOOM_DEFAULT = 1;
 const PTZ_MAX_ZOOM_DEFAULT = 9999;
 const STATUS_CACHE_MS = Number(process.env.STATUS_CACHE_MS || 7000);
 const CAPS_CACHE_MS = Number(process.env.CAPS_CACHE_MS || 60000);
+let lastStatusSuccessAt = null;
 const httpAgent = new http.Agent({ keepAlive: true });
 const insecureAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
@@ -648,7 +649,7 @@ async function buildStatusPayload() {
     getTemperatureAndIr(),
   ]);
 
-  return {
+  const payload = {
     optics,
     geolocation,
     time,
@@ -656,6 +657,8 @@ async function buildStatusPayload() {
     temperature,
     fetchedAt: new Date().toISOString(),
   };
+  lastStatusSuccessAt = payload.fetchedAt;
+  return payload;
 }
 
 async function getCachedStatusPayload() {
@@ -708,6 +711,16 @@ app.get("/api/status", async (_req, res) => {
       error: err instanceof Error ? err.message : "Failed to fetch status",
     });
   }
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    uptimeSec: Math.round(process.uptime()),
+    now: new Date().toISOString(),
+    viewerCount: getViewerCount(),
+    lastStatusSuccessAt,
+  });
 });
 
 app.get("/api/ptz/status", async (_req, res) => {

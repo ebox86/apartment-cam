@@ -7,10 +7,39 @@ services:
     ports:
       - "3001:3000"
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok) process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       cam-net:
         aliases:
           - cam-proxy
+
+  health-probe:
+    build: ./cam-proxy
+    container_name: apartment-health-probe
+    depends_on:
+      - cam-proxy
+      - go2rtc
+    environment:
+      CAM_PROXY_HEALTH_URL: http://cam-proxy:3000/api/health
+      GO2RTC_HEALTH_URL: http://go2rtc:1984/api/streams
+      PROBE_INTERVAL_MS: "15000"
+      PROBE_TIMEOUT_MS: "5000"
+      PROBE_FAIL_LOG_MS: "60000"
+    command: ["node", "health-probe.js"]
+    restart: unless-stopped
+    networks:
+      - cam-net
 
   go2rtc:
     image: alexxit/go2rtc:1.9.13
