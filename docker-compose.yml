@@ -78,9 +78,6 @@ services:
     depends_on:
       - go2rtc
       - cam-proxy
-    dns:
-      - 1.1.1.1
-      - 1.0.0.1
     volumes:
       - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
       - ${TUNNEL_CREDENTIALS_FILE:-./cloudflared/tunnel.json}:/etc/cloudflared/tunnel.json:ro
