@@ -14,7 +14,7 @@ import { siteConfig } from "../config/site-config";
 import ViewerHeader from "./components/ViewerHeader";
 
 const DEFAULT_API_BASE = "https://cam-api.ebox86.com";
-const DEFAULT_STREAM_URL = "/api/stream?src=axis&mp4";
+const DEFAULT_STREAM_URL = "/api/stream?src=axis";
 const DEFAULT_CAMERA_ID = 1;
 const STREAM_OFFLINE_LABEL = "STREAM OFFLINE";
 const ZOOM_HOLD_STEP = 24;

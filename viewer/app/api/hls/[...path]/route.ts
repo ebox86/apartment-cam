@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const STREAM_SOURCE = "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
+const STREAM_SOURCE = "https://cam.ebox86.com/api/stream.m3u8?src=axis";
 
 function buildStreamOrigin() {
   if (!STREAM_SOURCE) return null;
@@ -28,8 +28,14 @@ async function proxy(
 
   const resolvedParams = params ? await params : undefined;
   const path = (resolvedParams?.path || []).filter(Boolean).join("/");
-  const upstreamUrl = new URL(`/api/hls/${path}`, origin);
-  upstreamUrl.search = request.nextUrl.search;
+
+  const buildUpstreamUrl = () => {
+    const upstreamUrl = new URL(`/api/hls/${path}`, origin);
+    upstreamUrl.search = request.nextUrl.search;
+    return upstreamUrl;
+  };
+
+  const upstreamUrl = buildUpstreamUrl();
 
   const headers = new Headers(request.headers);
   headers.delete("host");

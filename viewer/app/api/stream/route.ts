@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const STREAM_SOURCE = "https://cam.ebox86.com/api/stream.m3u8?src=axis&mp4";
+const STREAM_SOURCE = "https://cam.ebox86.com/api/stream.m3u8?src=axis";
 
 function buildStreamTarget(request: NextRequest) {
   if (!STREAM_SOURCE) return null;
